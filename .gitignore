@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# pracovní složky, které na web nepatří
+.backups/
+.claude/

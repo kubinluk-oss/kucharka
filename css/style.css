@@ -1,0 +1,1383 @@
+/* ============================================================
+   Kuchařka — editorial / iOS style
+   Teplá krémová paleta, serifové titulky, tab bar, stránky.
+   ============================================================ */
+:root{
+  --bg:#FAF6EF;
+  --bg-elev:#FFFFFF;
+  --bg-elev2:#F1EAE0;
+  --text:#261D13;
+  --text-2:#6E5F4B;
+  --text-3:#7A6C57;
+  --separator:rgba(90,70,45,.12);
+  --accent:#3C7A47;
+  --grad:linear-gradient(135deg,#4E9159,#2E6B3D);
+  --accent-soft:rgba(60,122,71,.1);
+  --star:#EFA528;
+  --danger:#D8402F;
+  --success:#3AAE68;
+  --shadow-s:0 1px 2px rgba(50,35,20,.05),0 4px 14px rgba(50,35,20,.06);
+  --shadow-m:0 2px 6px rgba(50,35,20,.07),0 12px 32px rgba(50,35,20,.10);
+  --shadow-l:0 8px 20px rgba(50,35,20,.12),0 24px 60px rgba(50,35,20,.16);
+  --blur-bg:rgba(250,246,239,.6);
+  --panel:rgba(252,249,243,.82);
+  /* Tab bar „Liquid Glass" (Apple Music, iOS 26): světlá matná kapsle, jasnější
+     zvednutá dlaždice u vybrané položky, specular okraj, silný měkký stín */
+  --tab-bg:rgba(248,246,243,.45);
+  --tab-ink:rgba(40,30,20,.74);
+  --tab-chip:rgba(255,255,255,.62);
+  --tab-chip-rim:rgba(255,255,255,.55);
+  --tab-chip-shadow:0 1px 4px rgba(40,28,15,.08),inset 0 1px 0 rgba(255,255,255,.5);
+  --tab-shadow:0 10px 30px rgba(40,28,15,.18),0 3px 8px rgba(40,28,15,.12),0 0 0 .5px rgba(40,28,15,.045);
+  /* U tab baru zvlášť zeslabený přísvit+saturace (ne sdílené --glass-sheen-*) —
+     na plné síle spolu s průhledným --tab-bg dělaly u syté barvy pod barem
+     nápadný „svítící" pruh po obvodu (viz paměť 18.7.2026). */
+  --tab-sheen-1:rgba(255,255,255,.30);
+  --tab-sheen-2:rgba(255,255,255,.08);
+  --tab-sat:1.3;
+  /* „Liquid Glass" lesk: jemný přísvit shora, jako by na sklo dopadalo světlo —
+     stejný princip jako rim-light v referenčním shaderu, jen statický (bez sledování
+     kurzoru, které na dotykové appce nedává smysl) a v čistém CSS. Vrství se jako
+     background-image NAD barvu podkladu (background-color), ať se to netluče se
+     stackováním potomků jako pseudo-element. Použito na všech zamlžených/blur
+     plochách: tab bar, desktop navigace, panely, odznaky na fotkách. */
+  --glass-sheen-1:rgba(255,255,255,.55);
+  --glass-sheen-2:rgba(255,255,255,.14);
+  /* Jednotné hodnoty matného skla napříč appkou (dřív měl každý povrch jiné číslo):
+     velké panely (navbar, topnav, sheet) a malé odznaky na fotkách (pilulky na hero,
+     počty na dlaždicích, kruhová tlačítka na fotce). Tab bar má vlastní vyladěné
+     hodnoty (--tab-sat + blur 30px, viz poznámka u .tabbar) — ty neměnit. */
+  --glass-blur:14px;
+  --glass-sat:1.55;
+  --glass-blur-s:7px;
+  --glass-sat-s:1.35;
+  /* „Plastický" (konvexní) 3D feel iOS 26 Liquid Glass pro plovoucí ovládací
+     tlačítka (Zpět, sdílet+„•••" kapsle, kruhová tlačítka na podstránkách): přísvit
+     shora uvnitř (specular) + jemný stín dole uvnitř (objem) + měkký vržený stín
+     (odsazení od plochy) + lesklý gradient. Tlačítka jsou tmavě průsvitná v obou
+     režimech (bílá ikona), takže hodnoty jsou stejné pro světlý i tmavý motiv. */
+  /* Horní přísvit držet JEMNÝ — na plno působil jako ostré světlo shora (24.7.2026
+     ztlumeno na přání uživatele). Objem dělá hlavně stín dole, ne jas nahoře. */
+  --ctl-sheen:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.03) 46%,rgba(255,255,255,0) 62%);
+  /* Kolečka Zpět/filtr/avatar leží na POZADÍ STRÁNKY, ne na fotce — musí se proto
+     řídit režimem (světlé sklo + tmavá ikona ve světlém). Tlačítka na hero fotce
+     (.dh-back/.dh-actions) zůstávají natvrdo tmavá s bílou ikonou, tam je to správně. */
+  --ctl-bg:rgba(255,255,255,.60);
+  /* Konvexní přísvit/objem pro tab bar (přidává se k --tab-shadow) */
+  --tab-inset:inset 0 1px .5px rgba(255,255,255,.36),inset 0 -2px 4px rgba(40,28,15,.06);
+  /* Tentýž plastický feel pro NEprůhledná ovládací tlačítka (stepper porcí,
+     přidat do nákupu…) — jemnější, přizpůsobené světlé/tmavé ploše */
+  --plastic-solid:inset 0 1px 0 rgba(255,255,255,.40),inset 0 -1px 1px rgba(40,28,15,.05),0 1px 2px rgba(40,28,15,.08),0 5px 12px rgba(40,28,15,.07);
+  --r-l:26px;
+  --r-m:20px;
+  --r-s:14px;
+  --display:"New York",ui-serif,Georgia,"Times New Roman",serif;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+[data-theme="dark"]{
+  --bg:#16120E;
+  --bg-elev:#221C15;
+  --bg-elev2:#2D251C;
+  --text:#F5EFE6;
+  --text-2:#B7A890;
+  --text-3:#97886F;
+  --separator:rgba(200,175,140,.14);
+  --accent:#7CC287;
+  --accent-soft:rgba(124,194,135,.14);
+  --shadow-s:0 1px 3px rgba(0,0,0,.35);
+  --shadow-m:0 4px 14px rgba(0,0,0,.45);
+  --shadow-l:0 12px 40px rgba(0,0,0,.55);
+  --blur-bg:rgba(22,18,14,.6);
+  --panel:rgba(38,32,25,.85);
+  --tab-bg:rgba(48,42,34,.39);
+  --tab-ink:rgba(245,239,230,.62);
+  --tab-chip:rgba(255,255,255,.09);
+  --tab-chip-rim:rgba(255,255,255,.10);
+  --tab-chip-shadow:0 1px 5px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.08);
+  --tab-shadow:0 12px 34px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4);
+  --tab-sheen-1:rgba(255,255,255,.08);
+  --tab-sheen-2:rgba(255,255,255,.02);
+  --tab-sat:1.15;
+  --glass-sheen-1:rgba(255,255,255,.15);
+  --glass-sheen-2:rgba(255,255,255,.03);
+  --ctl-bg:rgba(52,45,36,.55);
+  --tab-inset:inset 0 1px .5px rgba(255,255,255,.12),inset 0 -2px 4px rgba(0,0,0,.28);
+  --plastic-solid:inset 0 1px 0 rgba(255,255,255,.05),inset 0 -1px 2px rgba(0,0,0,.34),0 2px 6px rgba(0,0,0,.38);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{height:100%;scroll-behavior:auto}
+body{
+  margin:0;min-height:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--text);
+  font-size:17px;line-height:1.47;
+  -webkit-font-smoothing:antialiased;
+  transition:background .25s;
+}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;padding:0;cursor:pointer;touch-action:manipulation}
+a{color:inherit;text-decoration:none}
+input,select,textarea{font-family:inherit;font-size:16px;color:var(--text)}
+img{display:block}
+[hidden]{display:none!important}
+h1,h2,h3{margin:0}
+
+.serif{font-family:var(--display)}
+
+/* ============ Offline banner ============ */
+.offline-banner{
+  position:fixed;top:0;left:0;right:0;z-index:300;
+  padding:calc(var(--safe-top) + 8px) 16px 8px;
+  background:var(--grad);color:#fff;font-weight:600;font-size:14px;text-align:center;
+}
+
+/* Sbalovací horní lišta s nadpisem ZRUŠENA (18.7.2026) — místo ní jsou tlačítka
+   v rozích trvale plovoucí (fixní), viz .page-topbar níže + .dh-back/.dh-actions. */
+
+/* ============ Horní navigace (desktop) ============ */
+.topnav{
+  display:none;
+  position:sticky;top:0;z-index:100;
+  align-items:center;gap:28px;
+  padding:14px 28px;
+  border-bottom:1px solid var(--separator);
+}
+.topnav::before{
+  content:'';position:absolute;inset:0;z-index:-1;
+  background-color:var(--blur-bg);
+  background-image:linear-gradient(180deg,var(--glass-sheen-1),var(--glass-sheen-2) 55%,transparent 85%);
+  -webkit-backdrop-filter:saturate(var(--glass-sat)) contrast(1.05) blur(var(--glass-blur));backdrop-filter:saturate(var(--glass-sat)) contrast(1.05) blur(var(--glass-blur));
+}
+.wordmark{
+  font-family:var(--display);font-size:26px;font-weight:700;letter-spacing:-.4px;
+}
+.wordmark span{
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.topnav-links{position:relative;display:flex;gap:4px;flex:1}
+.topnav-links a{
+  position:relative;z-index:1;
+  padding:8px 16px;border-radius:20px;font-size:15px;font-weight:600;color:var(--text-2);
+  transition:color .3s ease;
+}
+.topnav-links a:hover{color:var(--text)}
+.topnav-links a.active{color:var(--accent)}
+/* klouzavá pilulka pod aktivní záložkou (jako mobilní tab bar) — pozici nastavuje
+   positionTopnavIndicator v app.js, přejezd animuje tento transition */
+.topnav-indicator{
+  position:absolute;top:0;bottom:0;left:0;width:0;z-index:0;
+  border-radius:20px;background:var(--accent-soft);
+  opacity:0;pointer-events:none;
+  transition:left .4s cubic-bezier(.3,1.1,.4,1),width .4s cubic-bezier(.3,1.1,.4,1),opacity .2s;
+}
+.topnav-indicator.on{opacity:1}
+.topnav-add{
+  padding:9px 18px;border-radius:20px;font-size:14.5px;font-weight:700;color:#fff;
+  background:var(--grad);box-shadow:0 4px 14px rgba(46,107,61,.3);
+  transition:transform .15s;
+}
+.topnav-add:hover{transform:translateY(-1px)}
+
+/* ============ Tab bar (mobil) — vzor YouTube iOS ============
+   Celošířková skleněná kapsle s 5 položkami: Domů, Kategorie, „+" (nový recept),
+   Nákup, Hledat. JEN piktogramy, žádné popisky. Vybraná záložka má tmavší
+   skleněnou kapsli přes skoro celou výšku baru (~86 %) a o chlup užší než buňka
+   (~94 %, viz positionTabIndicator). „+" je akce — indikátor na něj nejezdí. */
+.tabbar-wrap{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(12px + var(--safe-bottom));z-index:150;
+  display:flex;align-items:center;
+  width:calc(100% - 32px);max-width:480px;
+}
+.tabbar-wrap.tabbar-hidden{display:none}
+.tabbar{
+  position:relative;overflow:hidden;
+  display:flex;align-items:stretch;gap:2px;flex:1 1 auto;min-width:0;
+  padding:5px;border-radius:999px;
+  /* --tab-inset = konvexní přísvit shora + objem dole → plastický 3D feel */
+  box-shadow:var(--tab-shadow),var(--tab-inset);
+}
+.tabbar::before{
+  content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  background-color:var(--tab-bg);
+  background-image:linear-gradient(180deg,var(--tab-sheen-1),var(--tab-sheen-2) 45%,transparent 75%);
+  -webkit-backdrop-filter:blur(21px) saturate(var(--tab-sat)) contrast(1.05);backdrop-filter:blur(21px) saturate(var(--tab-sat)) contrast(1.05);
+}
+.tabbar a{
+  position:relative;z-index:1;
+  display:flex;align-items:center;justify-content:center;
+  flex:1 1 0;min-width:0;padding:12px 0;border-radius:999px;
+  color:var(--tab-ink);transition:color .3s ease,transform .15s;
+}
+.tabbar a svg{width:24px;height:24px}
+.tabbar a.active{color:var(--accent)}
+.tabbar a:active{transform:scale(.9)}
+/* jemné „pop" ikony při zvolení záložky (jako iOS) */
+@keyframes tab-pop{0%{transform:scale(1)}42%{transform:scale(1.16)}100%{transform:scale(1)}}
+.tabbar a.active svg{animation:tab-pop .4s ease}
+/* zvednutá skleněná pilulka pod vybranou položkou. Poziciju ji přes left+right
+   (ne transform+width), aby při přejezdu mohl náběžný okraj jet napřed a zadní
+   dobíhat — tím se pilulka „kapalinově" protáhne a zase stáhne, jako v iOS 26.
+   Časování přechodu nastavuje JS (positionTabIndicator) podle druhu pohybu. */
+.tab-indicator{
+  position:absolute;top:4px;bottom:4px;left:0;right:auto;
+  border-radius:999px;
+  background-color:var(--tab-chip);
+  /* přísvit z tab-specifických (zeslabených) tokenů, ne ze sdílených --glass-sheen-*
+     — na plné síle to nad barevným obsahem svítilo, viz halo fix u .tabbar */
+  background-image:linear-gradient(180deg,var(--tab-sheen-1),transparent 70%);
+  border:1px solid var(--tab-chip-rim);
+  box-shadow:var(--tab-chip-shadow);
+  -webkit-backdrop-filter:blur(4px) contrast(1.05);backdrop-filter:blur(4px) contrast(1.05);
+  opacity:0;pointer-events:none;
+  transition:opacity .22s;
+}
+.tab-indicator.on{opacity:1}
+
+@media(min-width:1024px){
+  .topnav{display:flex;justify-content:space-between;padding:14px 40px}
+  .topnav-links{position:absolute;left:50%;transform:translateX(-50%);flex:none}
+  .tabbar-wrap{display:none}
+}
+
+/* patička (jen desktop) */
+.site-footer{
+  display:none;text-align:center;padding:36px 20px 44px;
+  font-size:13px;color:var(--text-3);
+}
+@media(min-width:1024px){.site-footer{display:block}}
+
+/* ============ Layout stránek ============ */
+#view{
+  padding:calc(16px + var(--safe-top)) 20px calc(120px + var(--safe-bottom));
+  max-width:1120px;margin:0 auto;
+}
+@media(min-width:1024px){
+  #view{padding-top:32px;padding-bottom:80px}
+}
+/* v editoru (bez tab baru) není potřeba velké spodní místo pod plovoucím barem */
+body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
+.page-narrow{max-width:720px;margin:0 auto}
+
+/* hlavička podstránky */
+.page-head{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.page-head .ph-text{flex:1;min-width:0}
+/* varianta pro Profil: hlavička vycentrovaná kolem velkého avatara */
+.page-head.page-head-center{justify-content:center}
+.page-head.page-head-center .ph-text{flex:none;text-align:center}
+.page-head.page-head-center .page-title{font-size:26px;margin-top:12px}
+.page-title{font-family:var(--display);font-size:32px;font-weight:700;letter-spacing:-.5px;line-height:1.15}
+.page-sub{font-size:14px;color:var(--text-2);margin-top:3px}
+/* Plovoucí rohová tlačítka (Zpět, filtr) — průhledné sklo se stejným plastickým
+   feelem jako zbytek appky, ale PODLE REŽIMU: leží na pozadí stránky, takže ve
+   světlém režimu musí být světlá s tmavou ikonou (dřív byla natvrdo tmavá s bílou
+   ikonou zkopírovaná z hero fotky a ve světlém režimu působila jako z dark mode).
+   Tlačítka NA fotce (.dh-back/.dh-actions) zůstávají tmavá — tam je to správně. */
+.circle-btn{
+  flex-shrink:0;width:42px;height:42px;border-radius:50%;
+  background-color:var(--ctl-bg);color:var(--text);
+  background-image:var(--ctl-sheen);
+  -webkit-backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);
+  box-shadow:var(--plastic-solid);
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .14s cubic-bezier(.34,1.56,.64,1);position:relative;
+}
+.circle-btn:active{transform:scale(.9)}
+.circle-btn svg{width:20px;height:20px}
+.badge-dot{
+  position:absolute;top:2px;right:2px;min-width:17px;height:17px;border-radius:9px;
+  background:var(--grad);color:#fff;font-size:10px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;padding:0 4px;
+}
+
+/* ============ Domů ============ */
+.greeting{margin:0 2px 22px}
+.greeting .kicker{
+  font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);
+}
+.greeting h1{
+  font-family:var(--display);font-size:36px;font-weight:700;letter-spacing:-.8px;line-height:1.12;
+  margin-top:6px;
+}
+@media(min-width:1024px){.greeting h1{font-size:46px}}
+
+/* hero — recept dne */
+.hero{
+  position:relative;display:block;border-radius:var(--r-l);overflow:hidden;
+  aspect-ratio:16/11;box-shadow:var(--shadow-m);margin-bottom:30px;
+  transition:transform .2s;
+}
+@media(min-width:640px){.hero{aspect-ratio:21/9}}
+@media(hover:hover){.hero:hover{transform:translateY(-3px) scale(1.005)}}
+.hero:active{transform:scale(.985)}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero .hero-ph{
+  position:absolute;inset:0;overflow:hidden;
+  display:flex;align-items:flex-start;justify-content:flex-end;padding:0 18px;
+  font-family:var(--display);font-size:180px;line-height:.82;font-weight:700;
+  color:rgba(255,255,255,.2);
+}
+.hero .scrim{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(15,8,4,.78) 0%,rgba(15,8,4,.25) 45%,rgba(15,8,4,0) 70%);
+}
+.hero-ph ~ .scrim{background:linear-gradient(to top,rgba(15,8,4,.6) 0%,rgba(15,8,4,.15) 46%,rgba(15,8,4,0) 72%)}
+.hero-sticker{
+  position:absolute;top:16px;left:16px;
+  background:var(--grad);color:#fff;font-size:11.5px;font-weight:800;letter-spacing:1.4px;
+  text-transform:uppercase;padding:7px 13px;border-radius:11px;
+  box-shadow:0 4px 12px rgba(0,0,0,.25);
+}
+.hero-body{position:absolute;left:0;right:0;bottom:0;padding:20px 22px;color:#fff}
+.hero-body h2{
+  font-family:var(--display);font-size:29px;font-weight:700;letter-spacing:-.4px;line-height:1.15;
+  text-shadow:0 2px 14px rgba(0,0,0,.35);
+}
+@media(min-width:640px){.hero-body h2{font-size:38px}}
+.hero-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.hero-pill{
+  padding:5px 12px;border-radius:14px;font-size:12.5px;font-weight:650;
+  background-color:rgba(255,255,255,.18);
+  background-image:linear-gradient(180deg,rgba(255,255,255,.4),transparent 70%);
+  -webkit-backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);
+}
+
+/* Hřejivá pozvánka „Nový recept" (na Domů a v prázdném Hledání) — přidávání
+   žije tam, kde recepty (vzor Fotky → „Nové album"). Klidná, needs se nepere
+   s hero. Celá dlaždice je odkaz na editor. */
+.add-recipe-card{
+  display:flex;align-items:center;gap:16px;
+  padding:18px 20px;margin-bottom:30px;border-radius:var(--r-l);
+  background:var(--accent-soft);
+  border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);
+  transition:transform .16s cubic-bezier(.34,1.4,.64,1);
+}
+@media(hover:hover){.add-recipe-card:hover{transform:translateY(-2px)}}
+.add-recipe-card:active{transform:scale(.99)}
+.arc-plus{
+  flex-shrink:0;width:48px;height:48px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--grad);color:#fff;
+  box-shadow:0 5px 14px rgba(46,107,61,.32),inset 0 1px 0 rgba(255,255,255,.3);
+}
+.arc-plus svg{width:26px;height:26px}
+.arc-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.arc-title{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.arc-sub{font-size:13.5px;color:var(--text-2)}
+.arc-chev{flex-shrink:0;font-size:24px;font-weight:400;color:var(--accent);line-height:1}
+
+/* poličky */
+.shelf{margin-bottom:28px}
+.shelf-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.shelf-head h2{font-family:var(--display);font-size:23px;font-weight:700;letter-spacing:-.3px}
+.shelf-tools{display:flex;align-items:center;gap:8px}
+.shelf-tools a{font-size:13.5px;font-weight:700;color:var(--accent)}
+.shelf-btn{
+  display:none;width:34px;height:34px;border-radius:50%;
+  background:var(--bg-elev);box-shadow:var(--shadow-s);color:var(--text-2);
+  align-items:center;justify-content:center;font-size:18px;font-weight:700;line-height:1;
+  transition:transform .12s;
+}
+.shelf-btn:hover{color:var(--accent)}
+.shelf-btn:active{transform:scale(.9)}
+@media(min-width:1024px){.shelf-btn{display:flex}}
+.shelf-scroll{
+  display:flex;gap:13px;overflow-x:auto;
+  scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  margin:0 -20px;padding:4px 20px 10px;
+  /* bez tohohle scroll-snap „spolkne" levý padding a první kartu přilepí k okraji
+     obrazovky (mimo zarovnání s nadpisem/hero) — snap teď respektuje 20px odsazení */
+  scroll-padding:0 20px;
+}
+.shelf-scroll::-webkit-scrollbar{display:none}
+.shelf-card{
+  flex-shrink:0;scroll-snap-align:start;
+  /* Šířka se dopočítá tak, aby za druhou kartou VŽDY vykoukl kus třetí — s pevnou
+     šířkou se na mobilu vešly přesně dvě a polička vypadala, že tím končí a nedá
+     se s ní hýbat. `100%` je vnitřní šířka pásu (bez 20px odsazení po stranách),
+     takže se to samo přizpůsobí od úzkých telefonů po velké. Vzorec:
+     2×karta + 2×mezera(13) + výkuk = šířka  ->  karta = (šířka − 26 − výkuk) / 2 */
+  --shelf-peek:30px;
+  width:calc((100% - 26px - var(--shelf-peek)) / 2);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+@media(min-width:1024px){.shelf-card{width:196px}}
+@media(hover:hover){.shelf-card:hover{transform:translateY(-4px)}}
+.shelf-card:active{transform:scale(.96)}
+.sc-photo{
+  width:100%;aspect-ratio:1/1;border-radius:var(--r-m);object-fit:cover;
+  box-shadow:var(--shadow-s);background:var(--bg-elev2);
+}
+.sc-ph{
+  width:100%;aspect-ratio:1/1;border-radius:var(--r-m);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-size:58px;font-weight:700;
+  box-shadow:var(--shadow-s);color:rgba(255,255,255,.85);
+}
+.sc-name{
+  font-size:15px;font-weight:700;line-height:1.28;letter-spacing:-.15px;margin-top:9px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.sc-meta{font-size:12.5px;color:var(--text-2);margin-top:3px}
+.sc-meta .st{color:var(--star);font-weight:700}
+
+/* mini kategorie na domů */
+.cat-mini{display:flex;gap:9px;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:2px 20px 8px}
+.cat-mini::-webkit-scrollbar{display:none}
+.cat-mini a{
+  flex-shrink:0;display:flex;align-items:center;gap:7px;
+  padding:9px 16px;border-radius:20px;font-size:14px;font-weight:650;
+  background:var(--bg-elev);box-shadow:var(--shadow-s);
+}
+.cat-mini a:active{transform:scale(.95)}
+
+/* ============ Kategorie — dlaždice ============ */
+.tile-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+@media(min-width:640px){.tile-grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:960px){.tile-grid{grid-template-columns:repeat(4,1fr)}}
+.cat-tile{
+  position:relative;border-radius:var(--r-m);aspect-ratio:8/5;padding:14px 15px;
+  display:flex;flex-direction:column;justify-content:space-between;
+  color:#fff;overflow:hidden;box-shadow:var(--shadow-s);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+@media(hover:hover){.cat-tile:hover{transform:translateY(-3px)}}
+.cat-tile:active{transform:scale(.96)}
+.cat-tile .ct-glyph{
+  font-family:var(--display);font-size:34px;font-weight:700;line-height:1;
+  color:rgba(255,255,255,.85);text-shadow:0 2px 6px rgba(0,0,0,.15);
+}
+/* emoji glyf: bez serifu/stínu, plná sytost; hero se navíc vycentruje a zmenší */
+.is-emoji{font-family:"Apple Color Emoji","Segoe UI Emoji",sans-serif !important;text-shadow:none !important;opacity:1 !important}
+.ct-glyph.is-emoji{font-size:32px}
+.hero .hero-ph.is-emoji{font-size:100px;opacity:.95 !important;align-items:center;justify-content:center;padding:0}
+.detail-hero .dh-ph.is-emoji{font-size:104px}
+.cat-tile .ct-name{
+  font-size:16.5px;font-weight:750;letter-spacing:-.2px;line-height:1.2;
+  text-shadow:0 1px 6px rgba(0,0,0,.22);
+}
+.cat-tile .ct-count{
+  position:absolute;top:12px;right:12px;
+  padding:3px 10px;border-radius:12px;font-size:12px;font-weight:800;
+  background-color:rgba(255,255,255,.24);
+  background-image:linear-gradient(180deg,rgba(255,255,255,.24),transparent 70%);
+  -webkit-backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);
+}
+.cat-tile.tile-all{grid-column:1/-1;aspect-ratio:auto;min-height:86px}
+/* gradientová paleta dlaždic */
+.g0{background:linear-gradient(135deg,#4E9159,#2E6B3D)}
+.g1{background:linear-gradient(135deg,#F7B733,#E8590C)}
+.g2{background:linear-gradient(135deg,#E05275,#9C2BAC)}
+.g3{background:linear-gradient(135deg,#56AB2F,#0E8A5F)}
+.g4{background:linear-gradient(135deg,#36B3C9,#2264D1)}
+.g5{background:linear-gradient(135deg,#7F53AC,#4E3ACD)}
+.g6{background:linear-gradient(135deg,#C33764,#8E2530)}
+.g7{background:linear-gradient(135deg,#0BA360,#3CBA92)}
+.g8{background:linear-gradient(135deg,#8D6E63,#5D4037)}
+
+.ghost-btn{
+  display:inline-flex;align-items:center;gap:7px;margin-top:18px;
+  padding:11px 18px;border-radius:16px;font-size:14px;font-weight:700;color:var(--accent);
+  background:var(--accent-soft);
+}
+.ghost-btn:active{transform:scale(.96)}
+
+/* ============ Seznam receptů (řádky) ============ */
+.row-list{display:flex;flex-direction:column;gap:11px}
+.row{
+  display:flex;gap:13px;align-items:center;
+  background:var(--bg-elev);border-radius:var(--r-m);padding:10px;
+  box-shadow:var(--shadow-s);
+  transition:transform .15s;
+}
+@media(hover:hover){.row:hover{transform:translateX(3px)}}
+.row:active{transform:scale(.98)}
+.row-thumb{width:78px;height:78px;border-radius:var(--r-s);object-fit:cover;flex-shrink:0;background:var(--bg-elev2)}
+.row-thumb-ph{
+  width:78px;height:78px;border-radius:var(--r-s);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-size:32px;font-weight:700;color:rgba(255,255,255,.85);
+}
+.row-body{flex:1;min-width:0}
+.row-kicker{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:var(--accent)}
+.row-name{
+  font-size:16px;font-weight:700;letter-spacing:-.2px;line-height:1.25;margin:2px 0 3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.row-meta{font-size:12.5px;color:var(--text-2)}
+.row-meta .st{color:var(--star);font-weight:750}
+.row-match{
+  align-self:flex-start;flex-shrink:0;transform:rotate(2deg);
+  background:var(--grad);color:#fff;font-size:11px;font-weight:800;
+  padding:5px 10px;border-radius:10px;margin-top:4px;
+}
+
+/* aktivní filtry */
+.active-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.afilter{
+  display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:16px;
+  background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:650;
+}
+.afilter button{font-size:12px;font-weight:800;color:inherit}
+
+/* ============ Hledání ============ */
+.search-box{position:relative;margin-bottom:14px}
+.search-box input{
+  width:100%;padding:15px 46px 15px 18px;border:none;border-radius:var(--r-m);
+  background:var(--bg-elev);outline:none;font-size:16.5px;
+  box-shadow:var(--shadow-s);
+}
+.search-box input:focus{box-shadow:0 0 0 2.5px var(--accent),var(--shadow-s)}
+.search-box .sb-clear{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:44px;height:44px;border-radius:50%;color:var(--text-3);font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+}
+/* scope hledání (Název / Ingredience) pod vyhledávacím polem */
+.scope-row{margin-bottom:14px}
+.search-hint{font-size:13.5px;color:var(--text-2);margin:0 4px 16px}
+.result-count{font-size:13px;font-weight:650;color:var(--text-2)}
+
+/* prázdné stavy */
+.empty{text-align:center;padding:56px 24px}
+.empty h3{font-family:var(--display);font-size:22px;font-weight:700;margin-bottom:6px}
+.empty p{font-size:14.5px;color:var(--text-2);margin:0 0 18px}
+
+/* ============ Detail receptu ============ */
+.detail-hero{
+  position:relative;
+  margin:calc(-16px - var(--safe-top)) -20px 0;
+  height:min(46vh,420px);min-height:270px;
+}
+@media(min-width:1024px){
+  .detail-hero{margin:0 0 0;border-radius:var(--r-l);overflow:hidden;height:400px}
+}
+.detail-hero img{width:100%;height:100%;object-fit:cover}
+.detail-hero .dh-ph{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-size:120px;font-weight:700;color:rgba(255,255,255,.85);
+}
+.detail-hero .dh-top{
+  position:absolute;top:0;left:0;right:0;height:110px;
+  background:linear-gradient(to bottom,rgba(10,6,3,.45),transparent);
+}
+/* Plovoucí ovládací tlačítka na hero (vzor Apple Podcasts / iOS 26 „Liquid Glass"):
+   Zpět vlevo jako kolečko, vpravo Sdílet + „•••" SLITÉ v jedné skleněné kapsli
+   (.dh-actions) s jemným dělítkem mezi ikonami. Jsou FIXNÍ, takže po odscrollování
+   hero fotky leží nad běžným (světlým) obsahem stránky — proto stejné sklo řízené
+   režimem jako .circle-btn, ne natvrdo tmavé. Ikona leží na vlastním podkladu
+   tlačítka, takže je čitelná i nad fotkou; od podkladu ho oddělí stín.
+   Na desktopu jsou vázaná na hero (absolute), protože nahoře je horní navigace. */
+.detail-hero .dh-back,.detail-hero .dh-actions{
+  position:fixed;top:calc(14px + var(--safe-top));z-index:141;
+  color:var(--text);background-color:var(--ctl-bg);
+  background-image:var(--ctl-sheen);
+  -webkit-backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);
+  box-shadow:var(--plastic-solid);
+}
+.detail-hero .dh-back{
+  left:16px;width:40px;height:40px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .14s cubic-bezier(.34,1.56,.64,1);
+}
+.detail-hero .dh-actions{
+  right:16px;height:40px;border-radius:20px;overflow:hidden;
+  display:flex;align-items:stretch;
+}
+.detail-hero .dh-btn{
+  width:46px;color:inherit;display:flex;align-items:center;justify-content:center;
+  transition:transform .14s cubic-bezier(.34,1.56,.64,1);
+}
+/* jemné svislé dělítko mezi Sdílet a „•••" (jako v segmentu iOS toolbaru) */
+.detail-hero .dh-btn + .dh-btn{box-shadow:inset 1px 0 0 var(--separator)}
+.detail-hero .dh-back:active,.detail-hero .dh-btn:active{transform:scale(.9)}
+.detail-hero .dh-back svg,.detail-hero .dh-btn svg{width:20px;height:20px}
+@media(min-width:1024px){
+  .detail-hero .dh-back,.detail-hero .dh-actions{position:absolute;top:14px}
+}
+.detail-card{
+  position:relative;margin:-44px 0 0;
+  background:var(--bg-elev);border-radius:var(--r-l);padding:22px 20px 20px;
+  box-shadow:var(--shadow-m);
+}
+.detail-kicker{font-size:11.5px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent)}
+.detail-title{
+  font-family:var(--display);font-size:31px;font-weight:700;letter-spacing:-.5px;line-height:1.14;
+  margin:5px 0 13px;
+}
+.meta-pills{display:flex;flex-wrap:wrap;gap:8px}
+.mpill{
+  display:flex;align-items:center;gap:6px;padding:7px 13px;border-radius:14px;
+  background:var(--bg-elev2);font-size:13px;font-weight:650;
+}
+.mpill .st{color:var(--star)}
+
+/* dvousloupcový detail na desktopu: vlevo ingredience, vpravo postup */
+.detail-wrap{max-width:720px;margin:0 auto}
+@media(min-width:1024px){
+  .detail-wrap{max-width:1020px}
+  .detail-cols.two{display:grid;grid-template-columns:370px minmax(0,1fr);gap:32px;align-items:start}
+  .detail-cols.two .detail-col-ing{position:sticky;top:88px}
+}
+
+.dsection{margin-top:28px}
+.dsection-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.dsection-head h3{font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.3px}
+.dsection-head .link-btn{font-size:13px;font-weight:750;color:var(--accent)}
+
+/* porce */
+.portion-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--bg-elev);border-radius:var(--r-m);padding:12px 16px;box-shadow:var(--shadow-s);
+  margin-bottom:12px;
+}
+.portion-bar b{font-size:15px;font-weight:700}
+.portion-bar small{display:block;font-weight:500;font-size:12px;color:var(--text-2)}
+.stepper{display:flex;align-items:center;gap:2px;background:var(--bg-elev2);border-radius:14px;padding:3px;box-shadow:var(--plastic-solid)}
+.stepper button{
+  width:46px;height:44px;border-radius:11px;font-size:21px;font-weight:600;color:var(--accent);
+  display:flex;align-items:center;justify-content:center;transition:background .12s;
+}
+.stepper button:active{background:var(--accent-soft)}
+.stepper .stepper-val{min-width:36px;text-align:center;font-weight:800;font-size:17px}
+
+/* ingredience */
+.ing-list{list-style:none;margin:0;padding:4px 0;background:var(--bg-elev);border-radius:var(--r-m);box-shadow:var(--shadow-s)}
+.ing-list li{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--separator);font-size:15.5px}
+.ing-list li:last-child{border-bottom:none}
+.ing-qty{font-weight:750;white-space:nowrap;min-width:68px;color:var(--accent)}
+
+/* kroky */
+.step-list{display:flex;flex-direction:column;gap:9px}
+.step-item{
+  display:flex;gap:13px;align-items:flex-start;background:var(--bg-elev);border-radius:var(--r-m);
+  padding:13px 15px;box-shadow:var(--shadow-s);cursor:pointer;transition:opacity .2s;
+  text-align:left;width:100%;
+}
+.step-num{
+  flex-shrink:0;width:27px;height:27px;border-radius:50%;font-size:13px;font-weight:800;color:#fff;
+  background:var(--grad);display:flex;align-items:center;justify-content:center;margin-top:1px;
+}
+.step-item.done{opacity:.5}
+.step-item.done .step-num{background:var(--success)}
+.step-item.done .step-text{text-decoration:line-through}
+.step-text{font-size:15.5px}
+
+/* akce v detailu */
+/* hlavní akce receptu — viditelné akcentní tlačítko hned pod ingrediencemi
+   (respektuje počet porcí); správcovské akce jsou pod „•••" na fotce */
+.ing-shop-btn{margin-top:16px}
+.ing-shop-btn svg{width:20px;height:20px}
+
+/* Kontextové „•••" menu — ZAKOTVENÝ popover u tlačítka (vzor Apple Podcasts):
+   horní řada rychlých akcí (ikona nad popiskem) + seznam pod ní, obyčejný průhledný
+   blur (NE liquid glass sheen). Zvýrazněná (press/hover) položka má zaoblené
+   NEUTRÁLNÍ ohraničení jako v iOS menu. */
+.menu-backdrop{position:fixed;inset:0;z-index:210;background:rgba(15,9,4,.16);animation:fadeIn .2s ease}
+.menu-backdrop.closing{animation:fadeOut .18s forwards}
+.ctx-menu{
+  position:fixed;min-width:232px;max-width:min(320px,calc(100vw - 20px));
+  max-height:calc(100vh - 90px - var(--safe-top) - var(--safe-bottom));overflow-y:auto;
+  background:var(--panel);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border:1px solid var(--separator);border-radius:var(--r-m);
+  box-shadow:var(--shadow-l);padding:5px;
+  will-change:transform,opacity;
+  /* Rozbalovací animace (vzor iOS UIMenu): panel VIDITELNĚ vyroste z rohu u kotvy
+     (transform-origin nastavuje JS) — začíná malý (scale .4) a pružinou dojede na
+     plnou velikost, aby bylo vidět reálné otevírání, ne jen prolnutí. Krytí naběhne
+     dřív než scale, takže se roztažení „dovaří" na už viditelném panelu. */
+  opacity:0;transform:scale(.4);
+  transition:opacity .17s ease-out,transform .38s cubic-bezier(.2,1.06,.28,1);
+}
+.ctx-menu.in{opacity:1;transform:scale(1)}
+.menu-backdrop.closing .ctx-menu{opacity:0;transform:scale(.86);transition:opacity .18s ease,transform .18s cubic-bezier(.4,0,.7,.3)}
+/* filtr: širší panel se sekcemi chipů (stejný panel jako „•••" menu) */
+.ctx-menu-filter{min-width:288px;max-width:min(340px,calc(100vw - 20px));padding:14px 15px}
+.ctx-filter .filter-section{margin-bottom:16px}
+.ctx-filter .filter-section:last-of-type{margin-bottom:13px}
+.ctx-filter #filter-reset{margin-top:0}
+.ctx-top{display:flex;gap:5px}
+.ctx-top-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:12px 6px;border-radius:var(--r-s);
+  font-size:12.5px;font-weight:600;color:var(--text);text-align:center;line-height:1.1;
+}
+.ctx-top-item svg{width:23px;height:23px;color:var(--text)}
+.ctx-top + .ctx-list{margin-top:5px;padding-top:5px;border-top:1px solid var(--separator)}
+.ctx-list{display:flex;flex-direction:column;gap:2px}
+.ctx-item{
+  display:flex;align-items:center;gap:13px;width:100%;
+  padding:12px;border-radius:var(--r-s);
+  font-size:16px;font-weight:600;color:var(--text);text-align:left;
+}
+.ctx-item svg{width:21px;height:21px;color:var(--text-2);flex-shrink:0}
+.ctx-item span{flex:1;min-width:0}
+.ctx-item.danger,.ctx-item.danger svg{color:var(--danger)}
+/* zapnutý přepínač (Wake Lock): vedoucí ikona + fajfka vpravo v akcentní barvě */
+.ctx-item.checked,.ctx-item.checked svg{color:var(--accent)}
+.ctx-item svg.ctx-check{width:19px;height:19px;color:var(--accent)}
+.ctx-tag{flex:none;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:9px}
+.ctx-top-item:active,.ctx-item:active{background:var(--bg-elev2);box-shadow:inset 0 0 0 1px var(--separator)}
+@media(hover:hover){
+  .ctx-top-item:hover,.ctx-item:hover{background:var(--bg-elev2);box-shadow:inset 0 0 0 1px var(--separator)}
+}
+
+/* recenze */
+.review-avg{display:flex;align-items:center;gap:12px;margin-bottom:13px}
+.review-avg .big-num{font-family:var(--display);font-size:40px;font-weight:700;letter-spacing:-1px}
+.review-avg .stars{font-size:17px}
+.review-avg small{color:var(--text-2);font-size:13px}
+.stars{color:var(--star);letter-spacing:1.5px}
+.review-item{
+  background:var(--bg-elev);border-radius:var(--r-m);padding:13px 15px;box-shadow:var(--shadow-s);
+  margin-bottom:9px;
+}
+.review-head{display:flex;align-items:center;gap:9px;margin-bottom:3px}
+.review-author{font-weight:750;font-size:14px}
+.review-date{font-size:12px;color:var(--text-3)}
+.review-del{margin-left:auto;color:var(--text-3);font-size:13px;width:44px;height:44px;margin:-9px -9px -9px 0;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.review-del:active{background:var(--accent-soft);color:var(--danger)}
+.review-comment{font-size:14.5px;margin:3px 0 0;white-space:pre-wrap}
+
+.detail-footnote{font-size:12px;color:var(--text-3);text-align:center;margin-top:26px}
+
+/* star picker */
+.star-picker{display:flex;justify-content:center;gap:5px;font-size:40px;padding:8px 0 4px;touch-action:none;user-select:none;-webkit-user-select:none}
+.star-picker .sp-star{position:relative;color:var(--text-3);cursor:pointer;line-height:1}
+.star-picker .sp-star .sp-fill{position:absolute;left:0;top:0;overflow:hidden;color:var(--star);width:0;pointer-events:none}
+.star-picker-val{text-align:center;font-weight:650;color:var(--text-2);font-size:14px;margin-bottom:8px}
+
+/* ============ Tlačítka ============ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:13px 20px;border-radius:16px;font-size:15px;font-weight:700;
+  background:var(--bg-elev);color:var(--text);box-shadow:var(--shadow-s);
+  transition:transform .12s;min-height:46px;
+}
+.btn:active{transform:scale(.96)}
+.btn-primary{background:var(--grad);color:#fff;box-shadow:0 5px 16px rgba(46,107,61,.32)}
+.btn-danger{color:var(--danger)}
+/* vedlejší akce v akcentní barvě na běžném zvednutém podkladu (např. „＋ Nová
+   kategorie" ve výběru kategorií, kde hlavní akcí je výběr ze seznamu) */
+.btn-accent{color:var(--accent)}
+.btn-block{width:100%}
+
+/* ============ Formuláře ============ */
+.form-group{margin-bottom:17px}
+.form-label{display:block;font-size:12.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text-2);margin-bottom:7px}
+
+/* grouped inset formulář po vzoru iOS Forms */
+.form-card{background:var(--bg-elev);border-radius:var(--r-m);box-shadow:var(--shadow-s);overflow:hidden;margin-bottom:24px}
+.field-row{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 16px;border-bottom:1px solid var(--separator)}
+.field-row:last-child{border-bottom:none}
+.field-label{font-size:16px;color:var(--text);flex-shrink:0}
+.field-row.field-input{padding:0}
+.field-control{width:100%;border:none;background:none;padding:15px 16px;font-size:17px;outline:none}
+.field-value{
+  margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--accent);font-size:16px;font-weight:600;text-align:right;
+}
+button.field-row{width:100%;text-align:left}
+button.field-row:active{background:var(--accent-soft)}
+button.field-row .row-chevron{flex-shrink:0;color:var(--text-3);font-size:15px}
+
+/* řádek pickeru kategorií — checkmark vpravo, konzistentní se settings-row */
+.cp-row .row-check{flex-shrink:0}
+.field-time{margin-left:auto;display:flex;align-items:center;gap:6px}
+.field-time input{width:56px;height:44px;text-align:center;border:none;background:var(--bg-elev2);border-radius:10px;padding:0 4px;outline:none;font-size:16px;color:var(--text)}
+.field-time input:focus,.field-num:focus{box-shadow:0 0 0 2px var(--accent)}
+.field-time span{font-size:14px;color:var(--text-2)}
+.field-num{margin-left:auto;width:66px;height:44px;text-align:center;border:none;background:var(--bg-elev2);border-radius:10px;padding:0 4px;outline:none;font-size:16px;color:var(--text)}
+.form-section{margin-bottom:24px}
+.section-label{font-size:12.5px;font-weight:800;letter-spacing:.9px;text-transform:uppercase;color:var(--text-2);margin:0 0 10px 4px}
+.form-input,.form-select,.form-textarea{
+  width:100%;padding:12px 14px;border:none;border-radius:var(--r-s);
+  background:var(--bg-elev);box-shadow:inset 0 0 0 1.5px var(--separator);outline:none;
+  appearance:none;-webkit-appearance:none;
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{box-shadow:inset 0 0 0 2px var(--accent)}
+.form-textarea{resize:vertical;min-height:76px}
+.form-select-wrap{position:relative}
+.form-select-wrap::after{
+  content:"⌄";position:absolute;right:13px;top:50%;transform:translateY(-60%);
+  color:var(--text-3);font-size:16px;pointer-events:none;
+}
+.form-row{display:flex;gap:10px}
+.form-row>*{flex:1;min-width:0}
+
+.ing-edit-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+.ing-edit-row .ing-qty-in{width:64px;flex-shrink:0;text-align:center}
+.ing-edit-row .ing-name-in{flex:1;min-width:0}
+.row-del{
+  flex-shrink:0;width:44px;height:44px;border-radius:50%;color:var(--text-3);font-size:15px;
+  display:flex;align-items:center;justify-content:center;transition:background .12s;
+}
+.row-del:active{color:var(--danger);background:var(--accent-soft)}
+.step-edit-row{display:flex;gap:9px;margin-bottom:9px;align-items:flex-start}
+.step-edit-row .step-num{margin-top:10px}
+.step-edit-row textarea{flex:1;min-height:54px}
+.step-edit-row .row-del{margin-top:9px}
+.add-row-btn{display:flex;align-items:center;gap:6px;color:var(--accent);font-weight:750;font-size:14px;padding:8px 4px}
+
+.photo-picker{
+  position:relative;border-radius:var(--r-m);overflow:hidden;background:var(--bg-elev);
+  box-shadow:inset 0 0 0 1.5px var(--separator);aspect-ratio:16/9;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+  color:var(--text-2);font-size:14px;font-weight:650;cursor:pointer;width:100%;
+}
+.photo-picker img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.photo-picker .photo-remove{
+  position:absolute;top:9px;right:9px;width:34px;height:34px;border-radius:50%;
+  background:rgba(0,0,0,.55);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;
+}
+
+/* ============ Nastavení ============ */
+.settings-group{margin-bottom:26px}
+.settings-group h3{font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-2);margin:0 0 10px 4px}
+.settings-card{background:var(--bg-elev);border-radius:var(--r-m);box-shadow:var(--shadow-s);overflow:hidden}
+.settings-row{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--separator);
+  width:100%;text-align:left;font-size:16px;min-height:50px;transition:background .12s;
+}
+.settings-row:last-child{border-bottom:none}
+button.settings-row:active{background:var(--accent-soft)}
+.settings-row .row-label{flex:1}
+.settings-row .row-chevron{color:var(--text-3);font-size:15px}
+.theme-seg{display:flex;background:var(--bg-elev2);border-radius:12px;padding:2px}
+.theme-seg button{padding:9px 13px;border-radius:10px;font-size:13px;font-weight:650;color:var(--text-2)}
+.theme-seg button.active{background:var(--bg-elev);color:var(--text);box-shadow:var(--shadow-s)}
+
+/* správce kategorií — úchyt vpravo (přesun) + swipe doleva na smazání, jako fronta v Apple Podcasts */
+.catman-row{position:relative;border-bottom:1px solid var(--separator);overflow:hidden}
+.catman-row:last-child{border-bottom:none}
+/* zaoblené plovoucí „Smazat" leží za obsahem; odhalí se a narůstá při posunu obsahu doleva */
+.cm-swipe-delete{
+  position:absolute;top:7px;bottom:7px;right:12px;width:88px;
+  background:var(--danger);color:#fff;font-weight:650;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:16px;white-space:nowrap;overflow:hidden;
+  transition:width .28s cubic-bezier(.32,.72,.24,1);
+}
+.cm-swipe-delete:active{background:#c0362a}
+.catman-row.swiping .cm-swipe-delete{transition:none}
+.cm-content{
+  position:relative;z-index:1;background:var(--bg-elev);
+  display:flex;align-items:center;gap:2px;padding:0 6px 0 14px;min-height:52px;
+  transition:transform .28s cubic-bezier(.32,.72,.24,1);
+  touch-action:pan-y;will-change:transform;
+}
+.catman-row.swiping .cm-content{transition:none}
+.catman-row.dragging .cm-content{transition:none}
+.cm-name{flex:1;min-width:0;display:flex;gap:8px;align-items:center;font-size:16px;font-weight:650}
+.cm-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-count{font-size:12px;color:var(--text-3);font-weight:750;flex-shrink:0}
+.cm-rename{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-2);border-radius:50%;transition:background .12s}
+.cm-rename:active{background:var(--accent-soft)}
+.cm-content .drag-handle{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:grab;touch-action:none}
+.catman-row.dragging{z-index:5}
+.catman-row.dragging .cm-content{background:var(--bg-elev);border-radius:var(--r-s);box-shadow:var(--shadow-m)}
+.catman-row.dragging .drag-handle{cursor:grabbing}
+
+/* editor kategorie: náhled + barva + emoji */
+.cat-preview{width:104px;height:70px;border-radius:var(--r-m);margin:2px auto 22px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-m)}
+.cat-prev-glyph{font-family:var(--display);font-weight:700;font-size:34px;color:rgba(255,255,255,.92);text-shadow:0 2px 8px rgba(0,0,0,.2)}
+.cat-prev-glyph.is-emoji{font-family:"Apple Color Emoji","Segoe UI Emoji",sans-serif;font-size:38px;text-shadow:none}
+/* Barva — řada plných teček, jako výběr barvy seznamu v Připomínkách (ne mřížka čtverečků). */
+.color-dots{display:flex;gap:9px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.color-dots::-webkit-scrollbar{display:none}
+.dot{
+  position:relative;flex-shrink:0;width:38px;height:38px;border-radius:50%;
+  box-shadow:var(--shadow-s);transition:transform .12s;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.dot:active{transform:scale(.88)}
+.dot .dot-check{opacity:0;transform:scale(.5);transition:opacity .15s,transform .15s cubic-bezier(.34,1.56,.64,1)}
+.dot.sel .dot-check{opacity:1;transform:scale(1)}
+/* vlastní barva: konicová duha jako ikona + skutečný nativní <input type=color> překrývající celou plochu */
+.dot-custom{background:conic-gradient(from 0deg,#ff3b30,#ff9500,#ffcc00,#34c759,#00c7be,#30b0c7,#007aff,#5856d6,#af52de,#ff3b30)}
+.dot-custom input[type="color"]{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:none;padding:0;cursor:pointer;border-radius:50%}
+.dot-custom-ring{position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--bg-elev)}
+
+.emoji-row{display:flex;gap:8px;align-items:stretch}
+.emoji-trigger{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  font-size:26px;color:var(--text-3);min-height:56px;
+  border:none;border-radius:var(--r-s);background:var(--bg-elev);
+  box-shadow:inset 0 0 0 1.5px var(--separator);transition:transform .12s;
+}
+.emoji-trigger.is-emoji{color:inherit;font-family:"Apple Color Emoji","Segoe UI Emoji",sans-serif}
+.emoji-trigger:active{transform:scale(.97)}
+.btn-sm{padding:0 16px;min-height:auto;height:auto;font-size:14px;flex-shrink:0}
+
+/* Vlastní picker emoji — napodobuje pruh kategorií na iOS emoji klávesnici. */
+.emoji-picker{margin:0 -2px}
+.ep-tabs{
+  display:flex;gap:2px;padding:4px;margin-bottom:10px;
+  background:var(--bg-elev2);border-radius:14px;
+}
+.ep-tab{
+  flex:1;font-size:21px;padding:7px 0;border-radius:10px;line-height:1;
+  transition:background .15s,transform .1s;
+}
+.ep-tab:active{transform:scale(.9)}
+.ep-tab.active{background:var(--bg-elev);box-shadow:var(--shadow-s)}
+.ep-scroll{position:relative;height:336px;overflow-y:auto;-webkit-overflow-scrolling:touch;scroll-behavior:auto}
+.ep-section{margin-bottom:18px}
+.ep-sec-label{font-size:12.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--text-2);margin:0 0 8px 2px}
+.ep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:2px}
+.ep-emoji{
+  aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  font-size:25px;border-radius:10px;transition:background .1s,transform .1s;
+}
+.ep-emoji:active{background:var(--accent-soft);transform:scale(.88)}
+
+/* filtr sheet */
+.filter-section{margin-bottom:22px}
+.filter-section h4{font-size:12.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--text-2);margin:0 0 10px}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.fchip{
+  padding:9px 16px;border-radius:999px;font-size:14px;font-weight:650;
+  background:var(--bg-elev);box-shadow:var(--shadow-s);transition:transform .1s;
+}
+.fchip:active{transform:scale(.94)}
+.fchip.active{background:var(--grad);color:#fff}
+
+/* ============ Panel (vycentrovaný průsvitný rámeček) ============ */
+.sheet-backdrop{
+  position:fixed;inset:0;z-index:200;background:rgba(25,15,8,.32);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;padding-bottom:calc(20px + var(--safe-bottom));
+  animation:fadeIn .2s;
+}
+.sheet-backdrop.closing{animation:fadeOut .18s forwards}
+.sheet{
+  position:relative;overflow:hidden;
+  border:1px solid var(--separator);
+  width:100%;max-width:560px;max-height:calc(100dvh - 64px - var(--safe-top));
+  border-radius:var(--r-l);box-shadow:var(--shadow-l);
+  display:flex;flex-direction:column;
+  animation:popIn .28s cubic-bezier(.34,1.4,.64,1);
+}
+.sheet::before{
+  content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;
+  background-color:var(--panel);
+  background-image:linear-gradient(180deg,var(--glass-sheen-1),var(--glass-sheen-2) 25%,transparent 50%);
+  -webkit-backdrop-filter:saturate(var(--glass-sat)) contrast(1.05) blur(var(--glass-blur));backdrop-filter:saturate(var(--glass-sat)) contrast(1.05) blur(var(--glass-blur));
+}
+.sheet-backdrop.closing .sheet{animation:popOut .18s forwards}
+.sheet-head{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px;gap:10px}
+.sheet-title{font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.3px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-close{
+  width:33px;height:33px;border-radius:50%;background:var(--bg-elev2);color:var(--text-2);
+  font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 18px 24px;overscroll-behavior:contain}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+@keyframes popIn{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes popOut{from{transform:scale(1);opacity:1}to{transform:scale(.94);opacity:0}}
+
+/* ============ Modal ============ */
+.modal-backdrop{
+  position:fixed;inset:0;z-index:250;background:rgba(25,15,8,.42);
+  display:flex;align-items:center;justify-content:center;padding:28px;
+  animation:fadeIn .18s;
+}
+.modal-backdrop.closing{animation:fadeOut .15s forwards}
+.modal-box{
+  background:var(--bg-elev);border-radius:var(--r-l);max-width:340px;width:100%;
+  padding:24px 20px 16px;text-align:center;box-shadow:var(--shadow-l);
+  animation:popIn .22s cubic-bezier(.34,1.4,.64,1);
+}
+.modal-backdrop.closing .modal-box{animation:popOut .15s forwards}
+.modal-title{font-family:var(--display);font-size:19px;font-weight:700;margin:0 0 6px}
+.modal-msg{font-size:14px;color:var(--text-2);margin:0 0 16px;white-space:pre-wrap}
+.modal-box .form-input{margin-bottom:16px;text-align:center;background:var(--bg)}
+.modal-btns{display:flex;gap:8px}
+.modal-btns .btn{flex:1;box-shadow:none;background:var(--bg-elev2)}
+.modal-btns .btn-primary{background:var(--grad);color:#fff}
+.modal-btns .btn-danger{background:var(--danger);color:#fff}
+
+/* ============ Toast ============ */
+.toast-root{
+  position:fixed;left:0;right:0;bottom:calc(96px + var(--safe-bottom));z-index:400;
+  display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;
+}
+.toast{
+  background:var(--text);color:var(--bg);padding:11px 21px;border-radius:999px;
+  font-size:14px;font-weight:650;box-shadow:var(--shadow-l);
+  animation:toastIn .3s cubic-bezier(.34,1.4,.64,1);max-width:86vw;text-align:center;
+}
+.toast.hide{animation:toastOut .3s forwards}
+@keyframes toastIn{from{transform:translateY(14px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+@keyframes toastOut{to{transform:translateY(8px);opacity:0}}
+
+/* ============ Loader ============ */
+.loader-backdrop{
+  position:fixed;inset:0;z-index:500;background:rgba(25,15,8,.3);
+  display:flex;align-items:center;justify-content:center;
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+}
+.loader-box{
+  background:var(--bg-elev);border-radius:20px;padding:22px 30px;
+  display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:var(--shadow-l);
+}
+.spinner{
+  width:32px;height:32px;border-radius:50%;
+  border:3.5px solid var(--accent-soft);border-top-color:var(--accent);
+  animation:spin .75s linear infinite;
+}
+.loader-label{font-size:14px;font-weight:650;color:var(--text-2)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* skeleton */
+.skel-row{display:flex;gap:13px;background:var(--bg-elev);border-radius:var(--r-m);padding:10px;box-shadow:var(--shadow-s)}
+.skel-row .sk-thumb{width:78px;height:78px;border-radius:var(--r-s);background:var(--bg-elev2)}
+.skel-row .sk-lines{flex:1;padding-top:10px}
+.skel-row .sk-line{height:12px;border-radius:6px;background:var(--bg-elev2);margin-bottom:10px}
+.skel-row .sk-line.short{width:50%}
+.skel-hero{aspect-ratio:16/11;border-radius:var(--r-l);background:var(--bg-elev2);margin-bottom:30px}
+@media(min-width:640px){.skel-hero{aspect-ratio:21/9}}
+.skel-hero,.skel-row .sk-thumb,.skel-row .sk-line{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* utility */
+.muted{color:var(--text-2)}
+
+/* ============ Přihlašovací brána ============ */
+.auth-gate{
+  position:fixed;inset:0;z-index:600;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;
+  padding:calc(var(--safe-top) + 24px) 20px calc(var(--safe-bottom) + 24px);
+  overflow-y:auto;
+}
+.auth-wrap{width:100%;max-width:380px}
+.auth-card{
+  background:var(--bg-elev);border-radius:var(--r-l);box-shadow:var(--shadow-l);
+  padding:30px 26px;
+}
+.auth-brand{
+  font-family:var(--display);font-size:26px;font-weight:700;letter-spacing:-.5px;
+  text-align:center;margin-bottom:22px;
+}
+.auth-brand span{color:var(--accent)}
+.auth-title{font-family:var(--display);font-size:22px;font-weight:700;margin-bottom:10px;text-align:center}
+.auth-lead{font-size:14.5px;color:var(--text-2);text-align:center;margin:0 0 20px;line-height:1.5}
+.auth-tabs{
+  display:flex;background:var(--bg-elev2);border-radius:12px;padding:3px;margin-bottom:20px;
+}
+.auth-tabs button{
+  flex:1;text-align:center;padding:9px 0;border-radius:9px;font-weight:700;font-size:14.5px;
+  color:var(--text-2);
+}
+.auth-tabs button.active{background:var(--bg-elev);color:var(--text);box-shadow:var(--shadow-s)}
+.auth-switch{
+  display:block;width:100%;text-align:center;margin-top:14px;font-size:13.5px;font-weight:650;color:var(--accent);
+}
+/* Přihlášení přes Google — staví na .btn (stejný tvar, výška i stisk jako ostatní
+   tlačítka), jen s logem vlevo. */
+.oauth-row{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}
+.oauth-btn{gap:10px;font-size:14.5px}
+.oauth-btn svg{flex-shrink:0}
+.oauth-btn:disabled{opacity:.55}
+/* oddělovač „nebo e-mailem" — linka přes celou šířku s popiskem uprostřed */
+.auth-or{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--separator)}
+.auth-or span{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-3)}
+
+/* ============ Náhled sdíleného receptu (bez přihlášení) ============ */
+.public-banner{
+  padding:calc(var(--safe-top) + 10px) 16px 10px;
+  background:var(--bg-elev);box-shadow:var(--shadow-s);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.public-banner span{font-size:13px;color:var(--text-2);font-weight:600}
+.public-banner button{
+  background:var(--grad);color:#fff;font-weight:700;font-size:13px;
+  padding:8px 14px;border-radius:999px;flex-shrink:0;
+}
+body.public-view .tabbar-wrap,body.public-view .topnav,body.public-view .site-footer{display:none}
+
+/* ============ Profilový avatar ============
+   Avatar žije jen na dvou místech, jako trailing bar-button item v nativních iOS
+   appkách: (1) v hlavičce Domů na mobilu — a jen když jsi vyjetý nahoře, při
+   scrollu dolů se plynule schová (viz .hide-scrolled níže), (2) v horní navigaci
+   na desktopu. Nikde jinde (Kategorie, Hledat, Nákup, detail, editor) není. */
+.profile-avatar-btn{color:#fff;overflow:hidden}
+.profile-avatar-btn.avatar-empty{background:var(--bg-elev);color:var(--text-2)}
+/* avatar je jen na Domů a jen když jsi nahoře — při scrollu dolů se plynule schová */
+.page-topbar .profile-avatar-btn{transition:opacity .25s ease,transform .25s ease}
+.page-topbar .profile-avatar-btn.hide-scrolled{opacity:0;transform:scale(.7);pointer-events:none}
+.avatar-mono{font-family:var(--display);font-size:17px;font-weight:700;line-height:1}
+/* profilová fotka vyplní celé kolečko avatara (malé instance i velký hero) */
+.avatar-img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+.profile-edit-list{display:flex;flex-direction:column;gap:10px;padding:4px 0 2px}
+/* malý kruhový avatar libovolného člověka — u hodnocení a v seznamu „Kdo je v kuchařce" */
+.person-avatar{
+  flex-shrink:0;width:28px;height:28px;border-radius:50%;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  box-shadow:var(--shadow-s);
+}
+.person-avatar .avatar-mono{font-size:13px}
+.row-with-avatar{display:flex;align-items:center;gap:11px}
+.review-head .review-date{margin-left:auto}
+.review-head .review-del{margin-left:0}
+
+/* Sdílený horní pruh pro leading/trailing tlačítka (zpět, filtr, avatar) — VŽDY
+   stejná výška a pozice na úplně každé stránce, protože nezávisí na tom, jak
+   vysoký je velký nadpis pod ním (tenhle nadpis se posouvá/liší stránka od
+   stránky — kicker+dvouřádkový title na Domů vs. jednořádkový page-title jinde
+   vs. velké kolečko profilu). Přesně takhle fungují bar button items v nativní
+   iOS navigaci: leží ve vlastním pruhu, ne "vedle" velkého nadpisu. */
+.page-topbar{display:flex;align-items:center;gap:10px;height:42px;margin-bottom:14px}
+.page-topbar .spacer{flex:1}
+/* MOBIL: pruh s rohovými tlačítky je FIXNÍ a plovoucí (vzor Apple Podcasts) —
+   Zpět/profil/„+" zůstávají viditelné i při scrollu dolů. Průhledný, jen tlačítka
+   chytají klik; obsah pod ním scrolluje (kompenzace přes padding-top #view níže). */
+@media(max-width:1023px){
+  .page-topbar{
+    position:fixed;top:calc(10px + var(--safe-top));left:0;right:0;z-index:140;
+    height:auto;margin:0;padding:0 16px;pointer-events:none;
+  }
+  .page-topbar > *{pointer-events:auto}
+  .page-topbar .spacer{pointer-events:none}
+  #view{padding-top:calc(62px + var(--safe-top))}
+  /* detail receptu má hero přes celou šířku až nahoru — nechat původní odsazení,
+     ať hero „vyteče" pod plovoucí tlačítka (ta jsou nad tmavým hero dobře vidět) */
+  #view:has(.detail-hero){padding-top:calc(16px + var(--safe-top))}
+}
+/* na Domů/Kategorii nese pruh jen avatara + „+" — na desktopu je oboje v horní
+   liště, takže by tu jinak zůstala jen prázdná mezera navíc */
+@media(min-width:1024px){.page-topbar-avatar-only{display:none}}
+
+/* Plovoucí „+" vpravo nahoře ODSTRANĚNO (22.7.2026) — „+" žije uprostřed spodního
+   tab baru (vzor YouTube). Na desktopu ho zastupuje „+ Nový recept" v horní navigaci. */
+
+.profile-btn{
+  width:38px;height:38px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:var(--shadow-s);transition:transform .12s;
+}
+.profile-btn:active{transform:scale(.92)}
+.topnav-right{display:flex;align-items:center;gap:14px}
+
+/* Desktop má svůj avatar v horní liště (trvalý, vždy vidět) — instance vkládaná
+   do hlavičky Domů by ho jen zdvojila. */
+@media(min-width:1024px){
+  .profile-avatar-btn{display:none}
+  #profile-btn-desktop{display:flex}
+}
+
+.profile-hero-avatar{
+  width:82px;height:82px;border-radius:50%;margin:0 auto;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;box-shadow:var(--shadow-m);
+  transition:transform .12s;
+}
+.profile-hero-avatar:active{transform:scale(.94)}
+.profile-hero-avatar.avatar-empty{background:var(--bg-elev2);color:var(--text-2)}
+.profile-hero-avatar .avatar-mono{font-size:40px}
+
+
+/* ============ Nákupní seznam ============ */
+.shop-add{display:flex;gap:10px;align-items:center;margin-bottom:16px}
+.shop-add-input{
+  flex:1;min-width:0;height:48px;padding:0 16px;border-radius:var(--r-s);
+  background:var(--bg-elev);box-shadow:var(--shadow-s);border:none;
+}
+.shop-add-input:focus{outline:none;box-shadow:inset 0 0 0 2px var(--accent),var(--shadow-s)}
+.shop-add-btn{
+  flex-shrink:0;width:48px;height:48px;border-radius:var(--r-s);
+  background:var(--grad);color:#fff;
+  /* plastický lesk i na plné zelené: přísvit shora + stín dole uvnitř */
+  box-shadow:0 4px 12px rgba(46,107,61,.3),inset 0 1px 0 rgba(255,255,255,.20),inset 0 -2px 3px rgba(0,0,0,.16);
+  display:flex;align-items:center;justify-content:center;transition:transform .12s;
+}
+.shop-add-btn:active{transform:scale(.92)}
+
+.shop-section{margin-bottom:20px}
+.shop-section-head{
+  font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+  color:var(--text-2);margin:0 4px 8px;padding-top:2px;
+  transition:color .15s;
+}
+/* cíl přetažení: zvýrazní se jen karta (nikoli nadpis sekce, aby mu prstenec nezasahoval do textu) */
+.shop-section.drop-target .shop-section-head{color:var(--accent)}
+/* seznam: overflow visible, ať zvednutý řádek může přejet přes jiné sekce */
+.shop-list{overflow:visible;position:relative;border-radius:var(--r-m);transition:background .15s,box-shadow .15s}
+.shop-section.drop-target .shop-list{background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent)}
+.shop-row{position:relative;border-bottom:1px solid var(--separator);overflow:hidden;background:var(--bg-elev)}
+.shop-row:first-child{border-top-left-radius:var(--r-m);border-top-right-radius:var(--r-m)}
+.shop-row:last-child{border-bottom:none;border-bottom-left-radius:var(--r-m);border-bottom-right-radius:var(--r-m)}
+.shop-swipe-delete{
+  position:absolute;top:7px;bottom:7px;right:12px;width:88px;
+  background:var(--danger);color:#fff;font-weight:650;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:16px;white-space:nowrap;overflow:hidden;
+  transition:width .28s cubic-bezier(.32,.72,.24,1);
+}
+.shop-swipe-delete:active{background:#c0362a}
+.shop-row.swiping .shop-swipe-delete{transition:none}
+.shop-content{
+  position:relative;z-index:1;background:var(--bg-elev);
+  display:flex;align-items:center;gap:11px;min-height:52px;padding:8px 6px 8px 14px;
+  transition:transform .28s cubic-bezier(.32,.72,.24,1);
+  touch-action:pan-y;will-change:transform;
+}
+.shop-row.swiping .shop-content,.shop-row.dragging .shop-content{transition:none}
+.shop-check{flex-shrink:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+.shop-check-dot{
+  width:23px;height:23px;border-radius:50%;border:2px solid var(--text-3);
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+}
+.shop-row.done .shop-check-dot{background:var(--accent);border-color:var(--accent)}
+.shop-text{flex:1;min-width:0;font-size:16px;line-height:1.3}
+.shop-row.done .shop-text{color:var(--text-3);text-decoration:line-through}
+.shop-handle{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:grab;touch-action:none}
+.shop-row.dragging{z-index:6}
+.shop-row.dragging .shop-content{background:var(--bg-elev);border-radius:var(--r-s);box-shadow:var(--shadow-m)}
+.shop-row.dragging .shop-handle{cursor:grabbing}
+.shop-empty{padding-top:30px}
+.shop-empty-icon{color:var(--text-3);opacity:.5;margin-bottom:8px;display:flex;justify-content:center}
+
+/* ============ Jednotné interakce (audit 18. 7. 2026) ============ */
+/* Klávesnice (desktop): viditelný akcentní focus ring na všem interaktivním.
+   Jen :focus-visible — při ovládání myší/dotykem se nic nezobrazuje. Inputy mají
+   vlastní :focus zvýraznění, ať se to nedubluje. */
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:2px}
+input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
+
+/* Myš (desktop): jemný hover na interaktivních prvcích — stejný jazyk jako
+   existující hover u hero/karet poliček (lehké zvednutí, žádné barevné skoky). */
+@media(hover:hover){
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:scale(.96)}
+  .row:hover{transform:translateY(-1px)}
+  .fchip:hover{transform:translateY(-1px)}
+  .circle-btn:hover{color:var(--accent)}
+  button.settings-row:hover{background:var(--bg-elev2)}
+  .dh-back:hover{transform:scale(1.07)}
+  .dh-actions:hover{transform:scale(1.04)}
+  .dh-btn:hover{color:var(--accent)}
+  .review-del:hover{color:var(--danger);background:var(--accent-soft)}
+  .step-item:hover{box-shadow:var(--shadow-m)}
+  .sheet-close:hover{color:var(--text)}
+}
+.dh-back,.dh-actions{transition:transform .14s cubic-bezier(.34,1.56,.64,1)}
+.step-item{transition:opacity .2s,box-shadow .2s}
+
+/* Nájezd obsahu při navigaci mezi stránkami (mobil i desktop) — krátký fade +
+   posun nahoru, jako přechody v nativních iOS appkách. Spouští render() jen při
+   skutečné navigaci; živá překreslení (data, kroky) neanimují. */
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#view.page-enter{animation:pageIn .28s cubic-bezier(.3,1,.4,1)}
+
+/* ============ Minihra „Dokonalá palačinka" (velikonoční vajíčko) ============
+   Jemně plastický styl appky: zvednuté zaoblené plochy s přísvitem shora
+   (--plastic-solid), krémové pozadí, serifové nadpisy, akcentní zelená. */
+.gm-wrap{padding-bottom:20px}
+.gm-intro{text-align:center;margin-bottom:22px}
+.gm-logo{font-size:56px;line-height:1;margin-bottom:10px}
+.gm-title{font-family:var(--display);font-size:30px;font-weight:700;letter-spacing:-.5px;margin-bottom:8px}
+.gm-lead{font-size:14.5px;color:var(--text-2);line-height:1.55;margin:0 auto 20px;max-width:300px}
+.gm-play{max-width:280px;margin:0 auto}
+
+/* HUD nad pánví */
+.gm-hud{display:flex;gap:10px;margin-bottom:16px}
+.gm-stat{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:var(--bg-elev);border-radius:var(--r-m);padding:10px 6px;
+  box-shadow:var(--plastic-solid);
+}
+.gm-stat-k{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3)}
+.gm-stat-v{font-family:var(--display);font-size:21px;font-weight:700;line-height:1.1}
+.gm-stat-v.is-shield{color:var(--accent)}
+
+/* právě běžící efekty — pevná výška, ať pánev nepodskakuje, když efekt naskočí
+   nebo vyprší; při víc efektech se zkrátí jména, ne aby se pruh zalomil */
+.gm-active{
+  display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;gap:6px;
+  min-height:32px;margin-bottom:6px;
+}
+.gm-chip{
+  flex:0 1 auto;min-width:0;
+  display:flex;align-items:center;gap:5px;
+  padding:5px 9px;border-radius:999px;
+  background:var(--bg-elev);box-shadow:var(--plastic-solid);
+  animation:gmChipIn .22s cubic-bezier(.2,1.2,.4,1);
+}
+.gm-chip svg{width:16px;height:16px;flex-shrink:0;display:block}
+.gm-chip-name{
+  font-size:11.5px;font-weight:700;color:var(--text-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.gm-chip-left{
+  flex-shrink:0;font-size:11px;font-weight:800;color:var(--accent);
+  background:var(--accent-soft);padding:1px 6px;border-radius:999px;
+}
+.gm-chip-left.is-armed{color:var(--text-3);background:var(--bg-elev2)}
+@keyframes gmChipIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+
+/* plocha s pánví — čtvercová, klepnutí kamkoli otočí palačinku */
+.gm-stage{
+  position:relative;width:100%;aspect-ratio:1;max-width:380px;margin:0 auto;
+  touch-action:manipulation;-webkit-user-select:none;user-select:none;cursor:pointer;
+}
+.gm-stage canvas{display:block;width:100%;height:100%}
+.gm-hint{
+  position:absolute;left:50%;bottom:2%;transform:translateX(-50%);
+  font-size:13px;font-weight:650;color:var(--text-3);pointer-events:none;
+  animation:gmHint 1.8s ease-in-out infinite;
+}
+@keyframes gmHint{0%,100%{opacity:.45}50%{opacity:1}}
+
+/* pruh power-upů — má vlastní plochu, ať klepnutí nespadne do pánve */
+.gm-slots{display:flex;gap:9px;margin:16px auto 0;max-width:380px}
+.gm-slot{
+  flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:11px 4px;border-radius:var(--r-m);
+  background:var(--bg-elev);box-shadow:var(--plastic-solid);
+  transition:transform .12s;
+}
+.gm-slot:active{transform:scale(.94)}
+.gm-slot.is-empty{
+  background:none;box-shadow:none;
+  border:1.5px dashed var(--separator);min-height:62px;
+}
+.gm-slot-glyph{display:block;line-height:0}
+.gm-slot-glyph svg{width:27px;height:27px;display:block}
+.gm-slot-name{font-size:10.5px;font-weight:700;color:var(--text-2);text-align:center;line-height:1.15}
+@media(hover:hover){.gm-slot:not(.is-empty):hover{transform:translateY(-2px)}}
+
+/* žebříček */
+.gm-board{background:var(--bg-elev);border-radius:var(--r-m);padding:16px 16px 8px;box-shadow:var(--shadow-s)}
+.gm-board-title{font-family:var(--display);font-size:19px;font-weight:700;margin-bottom:10px}
+.gm-board-empty{font-size:13.5px;color:var(--text-2);margin:0 0 10px}
+.gm-board-list{list-style:none;margin:0;padding:0}
+.gm-row{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--separator)}
+.gm-row:last-child{border-bottom:none}
+.gm-row.is-me .gm-name{font-weight:800;color:var(--accent)}
+.gm-rank{width:18px;flex-shrink:0;font-size:13px;font-weight:800;color:var(--text-3);text-align:center}
+.gm-name{flex:1;min-width:0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gm-score{font-family:var(--display);font-size:18px;font-weight:700;flex-shrink:0}
+
+/* žádosti o přístup v Nastavení — jméno/e-mail + Pustit / ✕ */
+.req-row{gap:11px}
+.req-who{display:flex;flex-direction:column;line-height:1.3;min-width:0}
+.req-who b{font-size:15px}
+.req-mail{font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.req-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.req-yes{
+  padding:7px 13px;border-radius:999px;font-size:13px;font-weight:750;
+  background:var(--accent-soft);color:var(--accent);
+}
+.req-no{
+  width:32px;height:32px;border-radius:50%;font-size:14px;color:var(--text-3);
+  display:flex;align-items:center;justify-content:center;
+}
+.req-yes:active,.req-no:active{transform:scale(.92)}
+.req-yes:disabled{opacity:.5}
+@media(hover:hover){.req-no:hover{color:var(--danger);background:var(--accent-soft)}}
