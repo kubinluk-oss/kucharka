@@ -918,12 +918,11 @@ window.addEventListener('load', positionTopnavIndicator);
 /* ===== Plovoucí tlačítka v rozích (mobil) — vzor Apple Podcasts ===== */
 // Žádná sbalovací lišta s nadpisem uprostřed. Tlačítka Zpět/profil/„+"/„•••" jsou
 // přes CSS FIXNÍ (position:fixed) a zůstávají viditelná i při scrollu dolů.
-// Zbylo z ní jediné: kam vede „zpět" na aktuální stránce — čte to gesto „swipe od
-// levého okraje" (viz enableEdgeBack). Bez argumentu = není kam zpět (hlavní záložky).
-let navbarBackFn = null;
-function setBackAction(fn = null) {
-  navbarBackFn = fn;
-}
+//
+// POZOR: vlastní gesto „swipe od levého okraje zpět" tu ZÁMĚRNĚ NENÍ a nevracet ho.
+// Safari i appka přidaná na plochu mají gesto zpět vlastní, takže se vykonaly DVĚ
+// navigace naráz a uživatel skončil o dvě obrazovky zpátky (klik na šipku fungoval
+// správně, protože ten gesto nespouští). Návrat zpět tedy necháváme na prohlížeči.
 
 // Profilový avatar je JEN na Domů (jinde není vůbec) a JEN když jsi vyjetý nahoře —
 // při scrollu dolů se plynule schová. Existuje jen `#home-avatar`, jinde nic neřeší.
@@ -933,34 +932,15 @@ function updateHomeAvatar() {
 }
 window.addEventListener('scroll', updateHomeAvatar, { passive: true });
 
-/* iOS gesto „swipe od levého okraje zpět" — jen na mobilu a jen na stránkách, kde
-   je kam se vrátit (navbarBackFn nastavené). Musí začít u samého levého okraje a
-   táhnout doprava, ať se to netluče se swipem mazání položek (ten jde opačně). */
-(function enableEdgeBack() {
-  let t = null;
-  window.addEventListener('touchstart', e => {
-    if (!navbarBackFn || e.touches.length !== 1) { t = null; return; }
-    if (!window.matchMedia('(max-width:1023px)').matches) return;
-    const p = e.touches[0];
-    if (p.clientX > 26) return;                 // musí začít u levého okraje
-    t = { x0: p.clientX, y0: p.clientY, decided: false, active: false };
-  }, { passive: true });
-  window.addEventListener('touchmove', e => {
-    if (!t || t.decided) return;
-    const p = e.touches[0];
-    const dx = p.clientX - t.x0, dy = p.clientY - t.y0;
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-    t.decided = true;
-    t.active = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.3;   // vodorovně doprava
-  }, { passive: true });
-  window.addEventListener('touchend', e => {
-    if (!t) return;
-    const cur = t; t = null;
-    if (!cur.active) return;
-    const p = e.changedTouches[0];
-    if (p.clientX - cur.x0 > 70 && navbarBackFn) navbarBackFn();
-  }, { passive: true });
-})();
+/* Klávesnice zmenší viditelnou plochu a fixní tab bar by se vytlačil nahoru nad ni
+   (nejvíc bylo vidět na Hledání a Nákupu, kde se píše). Po dobu psaní ho proto
+   schováme — bar nepodskakuje a je víc místa na obsah. */
+document.addEventListener('focusin', e => {
+  if (e.target.matches('input, textarea, select')) document.body.classList.add('kb-open');
+});
+document.addEventListener('focusout', e => {
+  if (e.target.matches('input, textarea, select')) document.body.classList.remove('kb-open');
+});
 
 let currentRoute = parseRoute();
 let editorMounted = false;
@@ -1065,7 +1045,6 @@ function renderHome() {
       ${greetingRowHtml('Načítám kuchařku…')}
       <div class="skel-hero"></div>
       <div class="row-list">${'<div class="skel-row"><div class="sk-thumb"></div><div class="sk-lines"><div class="sk-line"></div><div class="sk-line short"></div></div></div>'.repeat(3)}</div>`;
-    setBackAction();
     wireViewAvatarButtons(); renderProfileButtons();
     return;
   }
@@ -1078,7 +1057,6 @@ function renderHome() {
         <p>Přidej první recept a začni sbírku.</p>
         <a class="btn btn-primary" href="#/novy">Přidat recept</a>
       </div>`;
-    setBackAction();
     wireViewAvatarButtons(); renderProfileButtons();
     return;
   }
@@ -1156,7 +1134,6 @@ function renderHome() {
       sc.closest('.shelf').querySelectorAll('.shelf-btn').forEach(b => { b.style.display = 'none'; });
     }
   });
-  setBackAction();
   wireViewAvatarButtons(); renderProfileButtons();
 }
 
@@ -1190,7 +1167,6 @@ function renderCatsPage() {
     </div>
     ${guestMode ? '' : '<button class="ghost-btn" id="cats-manage">Upravit kategorie</button>'}`;
   view.querySelector('#cats-manage')?.addEventListener('click', openCategoryManager);
-  setBackAction();
   renderProfileButtons();
 }
 
@@ -1228,7 +1204,6 @@ function renderListing(catKey) {
   view.querySelector('#pg-back').addEventListener('click', () => goBack('#/kategorie'));
   view.querySelector('#pg-filter').addEventListener('click', e => openFilterSheet(e.currentTarget, () => renderListing(catKey)));
   bindActiveFilters(view, () => renderListing(catKey));
-  setBackAction(() => goBack('#/kategorie'));
 }
 
 /* ================= Hledání ================= */
@@ -1305,8 +1280,6 @@ function renderSearchPage() {
   bindActiveFilters(view.querySelector('#af-wrap'), () => { renderSearchFilterBits(); updateSearchResults(); });
 
   updateSearchResults();
-  if (!state.searchQuery) setTimeout(() => input.focus(), 100);
-  setBackAction();
   renderProfileButtons();
 }
 
@@ -1519,7 +1492,6 @@ function renderDetailPage(id) {
   </div>`;
 
   view.querySelector('#d-back').addEventListener('click', () => goBack('#/'));
-  setBackAction(() => goBack('#/'));
 
   view.querySelector('#port-minus')?.addEventListener('click', () => {
     if (detailPortions > 1) { detailPortions--; renderDetailPage(id); }
@@ -1704,7 +1676,6 @@ function renderShoppingPage() {
     <div id="shop-body"></div>
   </div>`;
 
-  setBackAction();
   renderProfileButtons();
 
   const form = view.querySelector('#shop-add-form');
@@ -2228,10 +2199,8 @@ function renderEditorPage(editId) {
   // Nový recept je normální záložka (viz updateTabs) — bez „zpět" a bez gesta
   // swipe-back z okraje; úprava existujícího receptu zůstává vnořená obrazovka.
   if (isNew) {
-    setBackAction();
   } else {
     view.querySelector('#pg-back').addEventListener('click', () => goBack('#/recept/' + editId));
-    setBackAction(() => goBack('#/recept/' + editId));
   }
 
   // — rozepsaný nový recept: průběžné ukládání konceptu —
@@ -3019,7 +2988,6 @@ function renderSettingsPage() {
 
   view.querySelector('#set-login')?.addEventListener('click', exitGuestMode);
 
-  setBackAction(() => goBack('#/'));
   view.querySelector('#set-cats')?.addEventListener('click', openCategoryManager);
   view.querySelector('#set-feedback').addEventListener('click', openFeedback);
   enableGameEasterEgg(view.querySelector('.detail-footnote'));
@@ -3240,7 +3208,6 @@ function renderGamePage() {
     <div id="gm-screen"></div>
   </div>`;
   view.querySelector('#pg-back').addEventListener('click', () => goBack('#/nastaveni'));
-  setBackAction(() => goBack('#/nastaveni'));
 
   const screen = view.querySelector('#gm-screen');
 

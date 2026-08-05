@@ -23,7 +23,7 @@
   --panel:rgba(252,249,243,.82);
   /* Tab bar „Liquid Glass" (Apple Music, iOS 26): světlá matná kapsle, jasnější
      zvednutá dlaždice u vybrané položky, specular okraj, silný měkký stín */
-  --tab-bg:rgba(248,246,243,.45);
+  --tab-bg:rgba(248,246,243,.36);
   --tab-ink:rgba(40,30,20,.74);
   --tab-chip:rgba(255,255,255,.62);
   --tab-chip-rim:rgba(255,255,255,.55);
@@ -90,7 +90,7 @@
   --shadow-l:0 12px 40px rgba(0,0,0,.55);
   --blur-bg:rgba(22,18,14,.6);
   --panel:rgba(38,32,25,.85);
-  --tab-bg:rgba(48,42,34,.39);
+  --tab-bg:rgba(48,42,34,.31);
   --tab-ink:rgba(245,239,230,.62);
   --tab-chip:rgba(255,255,255,.09);
   --tab-chip-rim:rgba(255,255,255,.10);
@@ -186,11 +186,18 @@ h1,h2,h3{margin:0}
    (~94 %, viz positionTabIndicator). „+" je akce — indikátor na něj nejezdí. */
 .tabbar-wrap{
   position:fixed;left:50%;transform:translateX(-50%);
-  bottom:calc(12px + var(--safe-bottom));z-index:150;
+  /* Appka na ploše má safe-bottom ~34px; kdybychom k němu přičetli dalších 12,
+     bar visí 46px nad okrajem (vysoko). Kapsle smí přes pruh s domovským
+     indikátorem kousek zasahovat, stejně jako v Apple Music/Podcastech, proto
+     safe-bottom zmenšujeme. `max()` drží rozumný odstup i v běžném Safari,
+     kde je safe-bottom nulový. */
+  bottom:max(12px, calc(var(--safe-bottom) - 14px));z-index:150;
   display:flex;align-items:center;
   width:calc(100% - 32px);max-width:480px;
 }
 .tabbar-wrap.tabbar-hidden{display:none}
+/* při psaní (otevřená klávesnice) bar schováme, ať nepodskakuje nad klávesnicí */
+body.kb-open .tabbar-wrap{display:none}
 .tabbar{
   position:relative;overflow:hidden;
   display:flex;align-items:stretch;gap:2px;flex:1 1 auto;min-width:0;
@@ -275,7 +282,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
    ikonou zkopírovaná z hero fotky a ve světlém režimu působila jako z dark mode).
    Tlačítka NA fotce (.dh-back/.dh-actions) zůstávají tmavá — tam je to správně. */
 .circle-btn{
-  flex-shrink:0;width:42px;height:42px;border-radius:50%;
+  flex-shrink:0;width:48px;height:48px;border-radius:50%;
   background-color:var(--ctl-bg);color:var(--text);
   background-image:var(--ctl-sheen);
   -webkit-backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);backdrop-filter:blur(var(--glass-blur-s)) saturate(var(--glass-sat-s)) contrast(1.05);
@@ -284,7 +291,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   transition:transform .14s cubic-bezier(.34,1.56,.64,1);position:relative;
 }
 .circle-btn:active{transform:scale(.9)}
-.circle-btn svg{width:20px;height:20px}
+.circle-btn svg{width:23px;height:23px}
 .badge-dot{
   position:absolute;top:2px;right:2px;min-width:17px;height:17px;border-radius:9px;
   background:var(--grad);color:#fff;font-size:10px;font-weight:800;
@@ -577,22 +584,22 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   box-shadow:var(--plastic-solid);
 }
 .detail-hero .dh-back{
-  left:16px;width:40px;height:40px;border-radius:50%;
+  left:16px;width:48px;height:48px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
   transition:transform .14s cubic-bezier(.34,1.56,.64,1);
 }
 .detail-hero .dh-actions{
-  right:16px;height:40px;border-radius:20px;overflow:hidden;
+  right:16px;height:48px;border-radius:24px;overflow:hidden;
   display:flex;align-items:stretch;
 }
 .detail-hero .dh-btn{
-  width:46px;color:inherit;display:flex;align-items:center;justify-content:center;
+  width:52px;color:inherit;display:flex;align-items:center;justify-content:center;
   transition:transform .14s cubic-bezier(.34,1.56,.64,1);
 }
 /* jemné svislé dělítko mezi Sdílet a „•••" (jako v segmentu iOS toolbaru) */
 .detail-hero .dh-btn + .dh-btn{box-shadow:inset 1px 0 0 var(--separator)}
 .detail-hero .dh-back:active,.detail-hero .dh-btn:active{transform:scale(.9)}
-.detail-hero .dh-back svg,.detail-hero .dh-btn svg{width:20px;height:20px}
+.detail-hero .dh-back svg,.detail-hero .dh-btn svg{width:23px;height:23px}
 @media(min-width:1024px){
   .detail-hero .dh-back,.detail-hero .dh-actions{position:absolute;top:14px}
 }
