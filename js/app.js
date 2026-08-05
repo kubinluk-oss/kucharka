@@ -354,8 +354,10 @@ async function saveRecipe(recipe) {
     delete data.id;
     if (data.photo && data.photo.startsWith('data:')) {
       const photoRef = ref(storage, 'photos/' + id + '.jpg');
-      // bez tohohle posílá Firebase `max-age=0` a fotka se stahuje při každém
-      // zobrazení znovu; adresa fotky se nikdy nemění, takže rok je bezpečný
+      // Bez tohohle posílá Firebase `max-age=0` a fotka se stahuje při každém
+      // zobrazení znovu. Dlouhá platnost je bezpečná: při KAŽDÉM nahrání dostane
+      // soubor nový přístupový token, takže `getDownloadURL` níž vrátí JINOU
+      // adresu, uloží ji do receptu a všem se tím fotka přirozeně obnoví.
       await uploadString(photoRef, data.photo, 'data_url', { cacheControl: 'public, max-age=31536000' });
       data.photo = await getDownloadURL(photoRef);
     }
