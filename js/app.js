@@ -1681,6 +1681,16 @@ function renderShoppingPage() {
 
   const form = view.querySelector('#shop-add-form');
   const input = view.querySelector('#shop-add-input');
+
+  /* Klepnutí na „+" by poli sebralo zaostření a klávesnice by sjela dolů. iOS ji
+     přitom z kódu (input.focus()) znovu neotevře — musí to být přímá reakce na
+     dotek uživatele. Zabráníme proto samotné změně zaostření: `preventDefault`
+     na mousedown/pointerdown zruší přesun fokusu, ale odeslání formuláře nechá
+     proběhnout. Díky tomu jde psát položky jednu za druhou bez naklikávání. */
+  const addBtn = form.querySelector('.shop-add-btn');
+  ['mousedown', 'pointerdown'].forEach(ev =>
+    addBtn.addEventListener(ev, e => { if (document.activeElement === input) e.preventDefault(); }));
+
   form.addEventListener('submit', e => {
     e.preventDefault();
     const val = input.value.trim();
