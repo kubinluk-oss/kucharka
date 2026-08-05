@@ -354,7 +354,9 @@ async function saveRecipe(recipe) {
     delete data.id;
     if (data.photo && data.photo.startsWith('data:')) {
       const photoRef = ref(storage, 'photos/' + id + '.jpg');
-      await uploadString(photoRef, data.photo, 'data_url');
+      // bez tohohle posílá Firebase `max-age=0` a fotka se stahuje při každém
+      // zobrazení znovu; adresa fotky se nikdy nemění, takže rok je bezpečný
+      await uploadString(photoRef, data.photo, 'data_url', { cacheControl: 'public, max-age=31536000' });
       data.photo = await getDownloadURL(photoRef);
     }
     await setDoc(doc(db, 'recipes', id), data);
@@ -3103,7 +3105,7 @@ async function setMyAvatarPhoto(dataUrl) {
   const me = myName();
   if (!DEMO && currentUid() && me) {
     const photoRef = ref(storage, 'avatars/' + currentUid() + '.jpg');
-    await uploadString(photoRef, dataUrl, 'data_url');
+    await uploadString(photoRef, dataUrl, 'data_url', { cacheControl: 'public, max-age=31536000' });
     const url = await getDownloadURL(photoRef);
     state.avatarPhotos = { ...state.avatarPhotos, [me]: url };
     await saveAvatarPhotos();

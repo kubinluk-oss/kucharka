@@ -1,6 +1,13 @@
 // Service worker: cachuje jen soubory aplikace (shell). Data žijí ve Firebase,
 // takže požadavky mimo tento web necháváme být — aplikace potřebuje připojení.
-const CACHE = 'kucharka-v93';
+const CACHE = 'kucharka-v94';
+/* Fotky receptů a profilovek. Záměrně VLASTNÍ cache s vlastní verzí: přežije
+   aktualizace appky, takže se po každé změně kódu nestahují znovu. Firebase u nich
+   posílá `cache-control: private, max-age=0`, takže by je prohlížeč sám nikdy
+   neuložil a při každém návratu na stránku by je stahoval znovu. */
+const IMG_CACHE = 'kucharka-img-v1';
+const IMG_HOST = 'firebasestorage.googleapis.com';
+const IMG_MAX = 100;   // strop, ať cache neroste donekonečna
 const SHELL = [
   './',
   './index.html',
@@ -23,14 +30,38 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE && k !== IMG_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
+// Nejstarší fotky nad limit zahodí (klíče chodí v pořadí vložení).
+async function trimImgCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= IMG_MAX) return;
+  await Promise.all(keys.slice(0, keys.length - IMG_MAX).map(k => cache.delete(k)));
+}
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin || e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET') return;
+
+  // Fotky: nejdřív z cache (okamžitě), stáhnout jen když je tam ještě nemáme.
+  // Fotka pod danou adresou se nikdy nemění — při výměně dostane nový odkaz.
+  if (url.hostname === IMG_HOST) {
+    e.respondWith((async () => {
+      const cache = await caches.open(IMG_CACHE);
+      const hit = await cache.match(e.request);
+      if (hit) return hit;
+      const res = await fetch(e.request);
+      if (res.ok) { await cache.put(e.request, res.clone()); trimImgCache(cache); }
+      return res;
+    })());
+    return;
+  }
+
+  if (url.origin !== location.origin) return;
   // network-first s revalidací (obchází heuristickou HTTP cache prohlížeče),
   // cache je záloha pro výpadky
   e.respondWith(
