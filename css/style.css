@@ -196,8 +196,6 @@ h1,h2,h3{margin:0}
   width:calc(100% - 32px);max-width:480px;
 }
 .tabbar-wrap.tabbar-hidden{display:none}
-/* při psaní (otevřená klávesnice) bar schováme, ať nepodskakuje nad klávesnicí */
-body.kb-open .tabbar-wrap{display:none}
 .tabbar{
   position:relative;overflow:hidden;
   display:flex;align-items:stretch;gap:2px;flex:1 1 auto;min-width:0;

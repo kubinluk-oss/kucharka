@@ -932,19 +932,14 @@ function updateHomeAvatar() {
 }
 window.addEventListener('scroll', updateHomeAvatar, { passive: true });
 
-/* Klávesnice zmenší viditelnou plochu a fixní tab bar by se vytlačil nahoru nad ni
-   (nejvíc bylo vidět na Hledání a Nákupu, kde se píše). Po dobu psaní ho proto
-   schováme — bar nepodskakuje a je víc místa na obsah. */
-document.addEventListener('focusin', e => {
-  if (e.target.matches('input, textarea, select')) document.body.classList.add('kb-open');
-});
+/* Po zavření klávesnice nechává iOS občas viditelnou plochu posunutou nahoru a
+   fixní prvky (tab bar) pak visí výš, než mají. Tohle šťouchnutí přinutí prohlížeč
+   plochu přepočítat.
+   POZOR: NEZKOUŠET bar po dobu psaní schovávat (třída na body). Vypadá to jako
+   dobrý nápad, ale nákupní seznam po přidání položky pole znovu zaostří, takže
+   by bar zmizel natrvalo a nešel vrátit. Vyzkoušeno, rozbilo to appku. */
 document.addEventListener('focusout', e => {
   if (!e.target.matches('input, textarea, select')) return;
-  document.body.classList.remove('kb-open');
-  /* iOS po zavření klávesnice občas nechá viditelnou plochu posunutou nahoru a
-     fixní prvky (tab bar) pak visí výš, než mají. Projevovalo se to jen na
-     Hledání a Nákupu — jediných stránkách s textovým polem. Tohle šťouchnutí
-     přinutí prohlížeč plochu přepočítat a bar se vrátí na své místo. */
   setTimeout(() => window.scrollTo(0, window.scrollY), 60);
 });
 
