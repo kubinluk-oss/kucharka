@@ -13,7 +13,12 @@ import { toast, alertDialog } from './ui.js';
 import { escapeHtml } from './util.js';
 
 const gate = document.getElementById('auth-gate');
-let persistenceSet = false;
+
+/* Přihlášení se ukládá do prohlížeče natrvalo (browserLocalPersistence), takže
+   po zavření a otevření appky zůstává člověk přihlášený. Nastavuje se hned při
+   načtení modulu a `persistenceReady` je slib, na který se dá počkat — jinak by
+   šlo kliknout na přihlášení dřív, než se nastavení stihne projevit. */
+const persistenceReady = setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 /* ---------- Přihlášení přes Google ----------
    Aby tlačítko fungovalo, musí být Google POVOLENÝ ve Firebase konzoli
@@ -23,33 +28,51 @@ let persistenceSet = false;
    Přihlášení přes Apple tu ZÁMĚRNĚ NENÍ: Firebase pro něj vyžaduje Service ID
    a klíč, a ty jdou vytvořit jen v platném Apple Developer Programu (~$99/rok). */
 
-// V samostatné PWA (přidané na plochu) prohlížeč popupy blokuje/otvírá je mimo
-// appku — tam je spolehlivější přesměrování. Na webu/desktopu je lepší popup,
-// protože uživatel neztratí kontext stránky.
-function prefersRedirect() {
-  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-}
+/* POZOR na volbu popup vs. přesměrování.
+   Appka běží na jiné doméně (github.io) než `authDomain` Firebase projektu
+   (…firebaseapp.com). Přihlášení PŘESMĚROVÁNÍM si musí mezi těmi doménami předat
+   rozdělaný stav — a to Safari i další prohlížeče kvůli ochraně soukromí blokují.
+   Přihlášení pak tiše zhasne: uživatel se vrátí na přihlašovací obrazovku a
+   `getRedirectResult` vrátí null BEZ chyby, takže by se nedozvěděl vůbec nic.
+   Proto zkoušíme NEJDŘÍV popup (ten chyby hlásí) a přesměrování necháváme jen
+   jako nouzovku — a značkou v sessionStorage si pamatujeme, že běží, abychom
+   poznali, že se nedokončilo, a řekli to uživateli.
+   Trvale to vyřeší až provoz appky na stejné doméně jako authDomain. */
+const REDIRECT_FLAG = 'kucharka-auth-redirect';
+const flagSet = v => { try { v ? sessionStorage.setItem(REDIRECT_FLAG, '1') : sessionStorage.removeItem(REDIRECT_FLAG); } catch { /* soukromý režim */ } };
+const flagGet = () => { try { return !!sessionStorage.getItem(REDIRECT_FLAG); } catch { return false; } };
 
 async function signInWithGoogle() {
+  await persistenceReady;   // ať se přihlášení určitě uloží natrvalo
   const provider = new GoogleAuthProvider();
   // vždy nabídnout výběr účtu, ať se na sdíleném zařízení nepřihlásí pod cizím
   provider.setCustomParameters({ prompt: 'select_account' });
-  if (prefersRedirect()) return signInWithRedirect(auth, provider);
   try {
     return await signInWithPopup(auth, provider);
   } catch (e) {
-    // popup zablokovaný/nepodporovaný (in-app prohlížeče apod.) -> zkus přesměrování
+    // popup zablokovaný/nepodporovaný (in-app prohlížeče, appka na ploše) -> nouzovka
     if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment',
          'auth/cancelled-popup-request'].includes(e.code)) {
+      flagSet(true);
       return signInWithRedirect(auth, provider);
     }
     throw e;
   }
 }
 
-// Po návratu z přesměrování se výsledek musí vyzvednout, jinak chyba propadne
-// bez hlášky. Úspěch řeší onAuthStateChanged, tady jde jen o chybu.
-getRedirectResult(auth).catch(e => alertDialog('Přihlášení se nepovedlo', errMsg(e)));
+// Návrat z přesměrování. Když jsme ho spustili, ale nevrátil uživatele ANI chybu,
+// znamená to přesně tu tichou smrt popsanou výše — a musíme to říct nahlas.
+getRedirectResult(auth)
+  .then(res => {
+    if (!flagGet()) return;
+    flagSet(false);
+    if (!res || !res.user) {
+      alertDialog('Přihlášení se nedokončilo',
+        'Prohlížeč kvůli ochraně soukromí zahodil rozdělané přihlášení přes Google. ' +
+        'Zkus to prosím znovu, nebo se přihlas e-mailem a heslem — to funguje vždycky.');
+    }
+  })
+  .catch(e => { flagSet(false); alertDialog('Přihlášení se nepovedlo', errMsg(e)); });
 
 // Má uživatel heslo? (účet přes Google/Apple žádné nemá -> nedává smysl ho měnit)
 export function hasPasswordProvider() {
@@ -57,10 +80,6 @@ export function hasPasswordProvider() {
 }
 
 export function watchAuthState(cb) {
-  if (!persistenceSet) {
-    persistenceSet = true;
-    setPersistence(auth, browserLocalPersistence).catch(() => {});
-  }
   return onAuthStateChanged(auth, cb);
 }
 
@@ -216,6 +235,7 @@ function renderForm(mode) {
         await sendEmailVerification(cred.user);
         renderVerify();
       } else {
+        await persistenceReady;
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (e) {

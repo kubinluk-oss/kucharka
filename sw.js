@@ -1,6 +1,6 @@
 // Service worker: cachuje jen soubory aplikace (shell). Data žijí ve Firebase,
 // takže požadavky mimo tento web necháváme být — aplikace potřebuje připojení.
-const CACHE = 'kucharka-v87';
+const CACHE = 'kucharka-v88';
 const SHELL = [
   './',
   './index.html',
