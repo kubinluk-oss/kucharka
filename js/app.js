@@ -939,7 +939,13 @@ document.addEventListener('focusin', e => {
   if (e.target.matches('input, textarea, select')) document.body.classList.add('kb-open');
 });
 document.addEventListener('focusout', e => {
-  if (e.target.matches('input, textarea, select')) document.body.classList.remove('kb-open');
+  if (!e.target.matches('input, textarea, select')) return;
+  document.body.classList.remove('kb-open');
+  /* iOS po zavření klávesnice občas nechá viditelnou plochu posunutou nahoru a
+     fixní prvky (tab bar) pak visí výš, než mají. Projevovalo se to jen na
+     Hledání a Nákupu — jediných stránkách s textovým polem. Tohle šťouchnutí
+     přinutí prohlížeč plochu přepočítat a bar se vrátí na své místo. */
+  setTimeout(() => window.scrollTo(0, window.scrollY), 60);
 });
 
 let currentRoute = parseRoute();
