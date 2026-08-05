@@ -109,7 +109,11 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{height:100%;scroll-behavior:auto}
 body{
-  margin:0;min-height:100%;
+  /* `100%` se na iOS v appce na ploše počítá jen po hranici bezpečné zóny, takže
+     u krátkého obsahu (Hledání) stránka skončila kus nad spodkem obrazovky —
+     bylo vidět tmavší pruh a fixní tab bar se ukotvil k tomu konci, ne ke spodku.
+     `100dvh` bere celou plochu včetně bezpečných zón. `100%` zůstává jako záloha. */
+  margin:0;min-height:100%;min-height:100dvh;
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
   background:var(--bg);color:var(--text);
   font-size:17px;line-height:1.47;
