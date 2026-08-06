@@ -300,6 +300,11 @@ function loadShoppingLocal() {
 function shoppingIsLocal() { return DEMO || guestMode || !currentUid(); }
 
 function saveShopping() {
+  /* Seznam se právě změnil, takže jeho schovaná podoba je neplatná. Zahazujeme ji
+     tady u zdroje, ne až v obsluze dat z cloudu — jinak by se po přidání položek
+     z receptu (jsem na jiné stránce) ukázal na Nákupu ještě starý seznam. Týká se
+     to i místního ukládání v demu a u hosta, kam žádná data z cloudu nedorazí. */
+  pageCache.delete('shopping');
   if (shoppingIsLocal()) {
     try { localStorage.setItem(SHOPPING_LOCAL_KEY, JSON.stringify(state.shopping)); } catch { /* plná kvóta */ }
     return Promise.resolve();
@@ -313,6 +318,7 @@ function subscribeShopping() {
   if (!uidNow) return;
   onSnapshot(doc(db, 'shoppingLists', uidNow), d => {
     state.shopping = (d.exists() && Array.isArray(d.data().items)) ? d.data().items : [];
+    pageCache.delete('shopping');   // schovaná kopie je po změně seznamu neplatná
     if (currentRoute?.page === 'shopping') renderShoppingPage();
   }, err => console.error('shopping sync:', err));
 }
@@ -797,6 +803,40 @@ document.getElementById('profile-btn-desktop').addEventListener('click', () => {
 // zaškrtnutí v barvě akcentu — pro seznamy na běžném pozadí (ne bílé na barevné tečce)
 const checkAccentSvg = `<svg class="row-check" viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="var(--accent)"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+/* ================= Paměť hotových stránek =================
+   Každá navigace stavěla stránku znovu (`view.innerHTML`), čímž se zahodily i
+   všechny <img> — fotky pak musely pokaždé znovu naskočit. Držíme si proto hotové
+   uzly odcházející stránky a při návratu je jen zavěsíme zpět. Jsou to TYTÉŽ
+   prvky, takže si nechají načtené obrázky, navěšené obsluhy i pozici scrollu.
+
+   Ukládá se jen to, co je bezpečné obnovit. NEUKLÁDÁ se editor (drží rozepsaný
+   recept a musí se stavět načisto), Nastavení (mění se podle přihlášení) ani hra
+   (má běžící smyčku). */
+const pageCache = new Map();
+const PAGE_CACHE_MAX = 8;     // strop, ať paměť neroste donekonečna
+let cachedKey = null;         // klíč stránky, která je zrovna ve #view
+
+function routeKey(r) {
+  switch (r.page) {
+    case 'home': return 'home';
+    case 'cats': return 'cats';
+    case 'listing': return 'listing:' + r.cat;
+    case 'search': return 'search';
+    case 'shopping': return 'shopping';
+    case 'detail': return 'detail:' + r.id;
+    default: return null;
+  }
+}
+
+// Odcházející stránku si schovej. Ukládáme až při odchodu, takže se zachytí i
+// změny, které stránka udělala sama (překreslený nákupní seznam, odškrtnuté kroky).
+function stashPage() {
+  if (!cachedKey || !view.childNodes.length) return;
+  pageCache.delete(cachedKey);                    // smaž+vlož = posuň na konec (LRU)
+  pageCache.set(cachedKey, [...view.childNodes]);
+  while (pageCache.size > PAGE_CACHE_MAX) pageCache.delete(pageCache.keys().next().value);
+}
+
 /* ================= Router ================= */
 const view = document.getElementById('view');
 const scrollPos = {};
@@ -961,18 +1001,28 @@ function render() {
   document.querySelectorAll('.menu-backdrop').forEach(m => m.remove());   // zavři „•••"/filtr popover při navigaci
   if (stopGame) { stopGame(); stopGame = null; }   // zastav běžící minihru
   editorMounted = false;
+  stashPage();                                    // schovej stránku, ze které odcházíme
   updateTabs(currentRoute.page, currentRoute);
-  switch (currentRoute.page) {
-    case 'home': if (!restoreHome()) renderHome(); break;
-    case 'cats': renderCatsPage(); break;
-    case 'listing': renderListing(currentRoute.cat); break;
-    case 'search': renderSearchPage(); break;
-    case 'shopping': renderShoppingPage(); break;
-    case 'detail': renderDetailPage(currentRoute.id); break;
-    case 'editor': renderEditorPage(currentRoute.id); break;
-    case 'settings': renderSettingsPage(); break;
-    case 'game': renderGamePage(); break;
+
+  const key = routeKey(currentRoute);
+  const hotova = key ? pageCache.get(key) : null;
+  if (hotova) {
+    view.replaceChildren(...hotova);
+    renderProfileButtons();     // jméno/fotka profilu se mezitím mohly změnit
+  } else {
+    switch (currentRoute.page) {
+      case 'home': renderHome(); break;
+      case 'cats': renderCatsPage(); break;
+      case 'listing': renderListing(currentRoute.cat); break;
+      case 'search': renderSearchPage(); break;
+      case 'shopping': renderShoppingPage(); break;
+      case 'detail': renderDetailPage(currentRoute.id); break;
+      case 'editor': renderEditorPage(currentRoute.id); break;
+      case 'settings': renderSettingsPage(); break;
+      case 'game': renderGamePage(); break;
+    }
   }
+  cachedKey = key;
   window.scrollTo(0, scrollPos[location.hash] || 0);
   updateHomeAvatar();   // nastav viditelnost avataru podle obnovené pozice scrollu
   // jemný nájezd obsahu při NAVIGACI (ne při živých překresleních přes
@@ -1003,11 +1053,10 @@ window.addEventListener('popstate', onLocationChange);
 // Živá data dorazila -> obnovit aktuální stránku (šetrně, ať nezmizí rozepsaný text).
 function onDataChanged() {
   const y = window.scrollY;
-  /* Uložený DOM Domů je teď neplatný — data se změnila. Zahodit ho MUSÍME i když
+  /* Schované stránky jsou teď neplatné — data se změnila. Zahodit je MUSÍME i když
      zrovna stojíme jinde, jinak by se při návratu ukázala stará podoba (recept
-     upravený z editoru by se na Domů neprojevil). Když na Domů jsme, přestaví
-     ho hned renderHome() níž a rovnou si uloží novou podobu. */
-  homeNodes = null;
+     upravený z editoru by se na Domů neprojevil). */
+  pageCache.clear();
   switch (currentRoute.page) {
     case 'home': renderHome(); break;
     case 'cats': renderCatsPage(); break;
@@ -1145,20 +1194,6 @@ function renderHome() {
     }
   });
   wireViewAvatarButtons(); renderProfileButtons();
-  homeNodes = [...view.childNodes];   // ponech si hotový DOM (viz restoreHome)
-}
-
-/* Domovská stránka se při každém návratu stavěla znovu, takže se zahodily i
-   všechny <img> a fotky musely znovu naskočit. Držíme si proto hotové uzly a
-   při návratu je jen zavěsíme zpět — jsou to TYTÉŽ prvky, takže si nechají
-   načtené obrázky i navěšené obsluhy. Přestavíme je jen když dorazí nová data
-   (onDataChanged volá renderHome, ten si seznam uzlů přepíše). */
-let homeNodes = null;
-function restoreHome() {
-  if (!homeNodes || !homeNodes.length) return false;
-  view.replaceChildren(...homeNodes);
-  renderProfileButtons();   // jméno/fotka profilu se mohly mezitím změnit
-  return true;
 }
 
 /* ================= Kategorie — dlaždice ================= */
@@ -1515,6 +1550,15 @@ function renderDetailPage(id) {
       Přidáno ${formatDate(r.createdAt)}${r.updatedAt ? ` · upraveno ${formatDate(r.updatedAt)}` : ''}
     </p>
   </div>`;
+
+  /* Velká fotka: dokud se nerozbalí, byla na jejím místě prázdná plocha a pak
+     obrázek „plácnul". Když už je hotová (typicky z uložené kopie), ukážeme ji
+     hned; jinak se jemně prolne, takže to působí jako záměr, ne jako závada. */
+  const heroImg = view.querySelector('.detail-hero img');
+  if (heroImg) {
+    if (heroImg.complete && heroImg.naturalWidth) heroImg.classList.add('is-ready');
+    else heroImg.addEventListener('load', () => heroImg.classList.add('is-ready'), { once: true });
+  }
 
   view.querySelector('#d-back').addEventListener('click', () => goBack('#/'));
 

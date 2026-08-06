@@ -569,6 +569,9 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
 .detail-hero img{width:100%;height:100%;object-fit:cover}
 /* podklad pod fotkou — než se obrázek vykreslí, ať nebliká prázdné místo */
 .detail-hero{background:var(--bg-elev2)}
+/* fotka se objeví až když je hotová: buď hned (má-li se z čeho vzít), nebo prolnutím */
+.detail-hero img{opacity:0;transition:opacity .22s ease}
+.detail-hero img.is-ready{opacity:1}
 .row-thumb,.sc-photo{background:var(--bg-elev2)}
 .detail-hero .dh-ph{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
