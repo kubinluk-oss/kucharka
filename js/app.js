@@ -642,7 +642,7 @@ function rowHtml(r, { currentCat = null } = {}) {
   return `
   <a class="row" href="#/recept/${escapeHtml(r.id)}">
     ${r.photo
-      ? `<img class="row-thumb" src="${escapeHtml(r.photo)}" alt="" loading="lazy">`
+      ? `<img class="row-thumb" src="${escapeHtml(r.photo)}" alt="" loading="lazy" decoding="async" width="72" height="72">`
       : `<div class="row-thumb-ph ${catGrad(pCat || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(pCat || '__none')}">${recipeGlyph(r)}</div>`}
     <div class="row-body">
       ${cats.length ? `<div class="row-kicker">${cats.map(escapeHtml).join(' · ')}</div>` : ''}
@@ -662,7 +662,7 @@ function shelfCardHtml(r) {
   return `
   <a class="shelf-card" href="#/recept/${escapeHtml(r.id)}">
     ${r.photo
-      ? `<img class="sc-photo" src="${escapeHtml(r.photo)}" alt="" loading="lazy">`
+      ? `<img class="sc-photo" src="${escapeHtml(r.photo)}" alt="" loading="lazy" decoding="async" width="168" height="168">`
       : `<div class="sc-ph ${catGrad(pCat || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(pCat || '__none')}">${recipeGlyph(r)}</div>`}
     <div class="sc-name">${escapeHtml(r.name)}</div>
     <div class="sc-meta">${meta.join(' · ')}</div>
@@ -963,7 +963,7 @@ function render() {
   editorMounted = false;
   updateTabs(currentRoute.page, currentRoute);
   switch (currentRoute.page) {
-    case 'home': renderHome(); break;
+    case 'home': if (!restoreHome()) renderHome(); break;
     case 'cats': renderCatsPage(); break;
     case 'listing': renderListing(currentRoute.cat); break;
     case 'search': renderSearchPage(); break;
@@ -1003,6 +1003,11 @@ window.addEventListener('popstate', onLocationChange);
 // Živá data dorazila -> obnovit aktuální stránku (šetrně, ať nezmizí rozepsaný text).
 function onDataChanged() {
   const y = window.scrollY;
+  /* Uložený DOM Domů je teď neplatný — data se změnila. Zahodit ho MUSÍME i když
+     zrovna stojíme jinde, jinak by se při návratu ukázala stará podoba (recept
+     upravený z editoru by se na Domů neprojevil). Když na Domů jsme, přestaví
+     ho hned renderHome() níž a rovnou si uloží novou podobu. */
+  homeNodes = null;
   switch (currentRoute.page) {
     case 'home': renderHome(); break;
     case 'cats': renderCatsPage(); break;
@@ -1079,7 +1084,7 @@ function renderHome() {
 
     <a class="hero" href="#/recept/${escapeHtml(hero.id)}">
       ${hero.photo
-        ? `<img src="${escapeHtml(hero.photo)}" alt="">`
+        ? `<img src="${escapeHtml(hero.photo)}" alt="" decoding="async" fetchpriority="high">`
         : `<div class="hero-ph ${catGrad(primaryCategory(hero) || '__none')}${isEmojiGlyph(recipeGlyph(hero)) ? ' is-emoji' : ''}" style="position:absolute;inset:0;${catColorStyle(primaryCategory(hero) || '__none')}">${recipeGlyph(hero)}</div>`}
       <div class="scrim"></div>
       <span class="hero-sticker">Recept dne</span>
@@ -1140,6 +1145,20 @@ function renderHome() {
     }
   });
   wireViewAvatarButtons(); renderProfileButtons();
+  homeNodes = [...view.childNodes];   // ponech si hotový DOM (viz restoreHome)
+}
+
+/* Domovská stránka se při každém návratu stavěla znovu, takže se zahodily i
+   všechny <img> a fotky musely znovu naskočit. Držíme si proto hotové uzly a
+   při návratu je jen zavěsíme zpět — jsou to TYTÉŽ prvky, takže si nechají
+   načtené obrázky i navěšené obsluhy. Přestavíme je jen když dorazí nová data
+   (onDataChanged volá renderHome, ten si seznam uzlů přepíše). */
+let homeNodes = null;
+function restoreHome() {
+  if (!homeNodes || !homeNodes.length) return false;
+  view.replaceChildren(...homeNodes);
+  renderProfileButtons();   // jméno/fotka profilu se mohly mezitím změnit
+  return true;
 }
 
 /* ================= Kategorie — dlaždice ================= */
@@ -1412,7 +1431,7 @@ function renderDetailPage(id) {
   <div class="detail-wrap">
     <div class="detail-hero">
       ${r.photo
-        ? `<img src="${escapeHtml(r.photo)}" alt="">`
+        ? `<img src="${escapeHtml(r.photo)}" alt="" decoding="async" fetchpriority="high">`
         : `<div class="dh-ph ${catGrad(primaryCategory(r) || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(primaryCategory(r) || '__none')}">${recipeGlyph(r)}</div>`}
       <div class="dh-top"></div>
       <button class="dh-back" id="d-back" aria-label="Zpět">${backSvg}</button>
