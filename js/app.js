@@ -2993,7 +2993,7 @@ function renderSettingsPage() {
       </div>
     </div>
 
-    <p class="detail-footnote">${guestMode ? 'Prohlížíš jako host · bez úprav' : guestDemoFallback ? 'Ukázková data · kuchařka je jen pro pozvané' : 'Kuchařka · uzamčeno jen pro pozvané'}</p>
+    <p class="detail-footnote" id="set-foot">${guestMode ? 'Prohlížíš jako host · bez úprav' : guestDemoFallback ? 'Ukázková data · kuchařka je jen pro pozvané' : 'Kuchařka · uzamčeno jen pro pozvané'}</p>
   </div>`;
 
   view.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
@@ -3061,6 +3061,7 @@ function renderSettingsPage() {
   view.querySelector('#set-cats')?.addEventListener('click', openCategoryManager);
   view.querySelector('#set-feedback').addEventListener('click', openFeedback);
   enableGameEasterEgg(view.querySelector('.detail-footnote'));
+  showAppVersion(view.querySelector('#set-foot'));
 }
 
 function openChangePassword() {
@@ -3207,6 +3208,21 @@ function openAvatarColorPicker() {
    pruh, který klepnutí polyká (jinak by použití power-upu zároveň otočilo palačinku). */
 
 let stopGame = null;   // zastaví běžící smyčku při odchodu ze stránky (volá render())
+
+/* Verze appky v patičce Nastavení. Po nasazení chvíli trvá, než se nová verze
+   rozšíří — bez tohohle se snadno testuje ještě ta stará a marně se hledá chyba
+   v kódu, který na zařízení vůbec neběží. Ptáme se rovnou service workeru, který
+   soubory obsluhuje, takže je to skutečná běžící verze, ne jen něco zapsaného. */
+function showAppVersion(el) {
+  if (!el || !navigator.serviceWorker?.controller) return;
+  const onMsg = e => {
+    if (!e.data?.version) return;
+    navigator.serviceWorker.removeEventListener('message', onMsg);
+    el.textContent += ' · ' + String(e.data.version).replace('kucharka-', '');
+  };
+  navigator.serviceWorker.addEventListener('message', onMsg);
+  navigator.serviceWorker.controller.postMessage('version');
+}
 
 // Tři klepnutí do 1,2 s po sobě. Krátké okno = omylem se to nespustí.
 function enableGameEasterEgg(el) {
