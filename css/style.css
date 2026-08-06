@@ -302,6 +302,10 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
 
 /* ============ Domů ============ */
 .greeting{margin:0 2px 22px}
+/* Bublinka profilu sedí vpravo nahoře a je fixní, takže by do ní text zajížděl.
+   Vyhradíme mu vpravo místo — díky tomu může celý blok zůstat vysoko u okraje.
+   Na desktopu je avatar v horní liště, takže tam to není potřeba. */
+@media(max-width:1023px){.greeting{padding-right:62px}}
 .greeting .kicker{
   font-size:12px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:var(--accent);
 }
@@ -563,6 +567,9 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   .detail-hero{margin:0 0 0;border-radius:var(--r-l);overflow:hidden;height:400px}
 }
 .detail-hero img{width:100%;height:100%;object-fit:cover}
+/* podklad pod fotkou — než se obrázek vykreslí, ať nebliká prázdné místo */
+.detail-hero{background:var(--bg-elev2)}
+.row-thumb,.sc-photo{background:var(--bg-elev2)}
 .detail-hero .dh-ph{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   font-family:var(--display);font-size:120px;font-weight:700;color:rgba(255,255,255,.85);
@@ -1154,6 +1161,11 @@ body.public-view .tabbar-wrap,body.public-view .topnav,body.public-view .site-fo
   .page-topbar > *{pointer-events:auto}
   .page-topbar .spacer{pointer-events:none}
   #view{padding-top:calc(62px + var(--safe-top))}
+  /* Na Domů je avatar vpravo, takže obsah může výš než na ostatních stránkách.
+     Hodnota je ale zvolená tak, aby VELKÝ NADPIS začínal až POD avatarem (ten
+     sahá do 58 px) — jinak by do něj delší pozdrav zprava zajel. Nad avatarem
+     zůstává jen krátký pozdrav, který je vlevo a nikdy tak daleko nesahá. */
+  #view:has(.greeting){padding-top:calc(40px + var(--safe-top))}
   /* detail receptu má hero přes celou šířku až nahoru — nechat původní odsazení,
      ať hero „vyteče" pod plovoucí tlačítka (ta jsou nad tmavým hero dobře vidět) */
   #view:has(.detail-hero){padding-top:calc(16px + var(--safe-top))}

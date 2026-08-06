@@ -1040,7 +1040,7 @@ function recipeOfTheDay() {
 
 function greetingRowHtml(titleHtml) {
   return `
-    <div class="page-topbar page-topbar-avatar-only">${avatarBtnHtml('home-avatar')}<span class="spacer"></span></div>
+    <div class="page-topbar page-topbar-avatar-only"><span class="spacer"></span>${avatarBtnHtml('home-avatar')}</div>
     <div class="greeting"><div class="kicker">${greeting()}</div><h1>${titleHtml}</h1></div>`;
 }
 
@@ -1400,7 +1400,8 @@ function renderDetailPage(id) {
   }
 
   const basePortions = parseInt(r.portions) || 1;
-  const mult = detailPortions / basePortions;
+  const currentMult = () => detailPortions / basePortions;
+  const mult = currentMult();   // pro první vykreslení
   const ings = (r.ingredients || []).filter(i => i.name);
   const steps = (r.steps || []).filter(Boolean);
   const reviews = r.reviews || [];
@@ -1498,37 +1499,72 @@ function renderDetailPage(id) {
 
   view.querySelector('#d-back').addEventListener('click', () => goBack('#/'));
 
+  /* Porce mění jen čísla u ingrediencí — překreslovat kvůli tomu celou stránku
+     znamenalo zahodit i <img> s fotkou, která pak musela znovu naskočit (blikala).
+     Proto se sahá přímo na dotčené prvky. */
+  const portVal = view.querySelector('#port-val');
+  const qtyCells = [...view.querySelectorAll('.ing-list .ing-qty')];
+  function refreshPortions() {
+    const m = currentMult();
+    if (portVal) portVal.textContent = detailPortions;
+    qtyCells.forEach((cell, idx) => {
+      const i = ings[idx];
+      if (!i) return;
+      const txt = [scaleQty(i.qty, m), i.unit && i.unit !== '—' ? i.unit : ''].filter(Boolean).join(' ');
+      cell.textContent = txt || '\u00a0';
+    });
+  }
   view.querySelector('#port-minus')?.addEventListener('click', () => {
-    if (detailPortions > 1) { detailPortions--; renderDetailPage(id); }
+    if (detailPortions > 1) { detailPortions--; refreshPortions(); }
   });
   view.querySelector('#port-plus')?.addEventListener('click', () => {
-    if (detailPortions < 99) { detailPortions++; renderDetailPage(id); }
+    if (detailPortions < 99) { detailPortions++; refreshPortions(); }
   });
+
+  // Odškrtnutí kroku taky nesmí překreslit stránku (viz fotka výše).
+  const stepsHead = view.querySelector('.dsection-head');
+  function refreshStepsReset(count) {
+    let btn = view.querySelector('#steps-reset');
+    if (count > 0 && !btn && stepsHead) {
+      stepsHead.insertAdjacentHTML('beforeend', '<button class="link-btn" id="steps-reset">Vynulovat (' + count + ')</button>');
+      wireStepsReset();
+    } else if (count > 0 && btn) {
+      btn.textContent = 'Vynulovat (' + count + ')';
+    } else if (btn) {
+      btn.remove();
+    }
+  }
+  function wireStepsReset() {
+    view.querySelector('#steps-reset')?.addEventListener('click', () => {
+      setCheckedSteps(id, new Set());
+      view.querySelectorAll('[data-step]').forEach(b => {
+        b.classList.remove('done');
+        b.querySelector('.step-num').textContent = +b.dataset.step + 1;
+      });
+      refreshStepsReset(0);
+    });
+  }
+  wireStepsReset();
 
   view.querySelectorAll('[data-step]').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = +btn.dataset.step;
       const set = getCheckedSteps(id);
-      set.has(i) ? set.delete(i) : set.add(i);
+      const done = set.has(i);
+      done ? set.delete(i) : set.add(i);
       setCheckedSteps(id, set);
-      const y = window.scrollY;
-      renderDetailPage(id);
-      window.scrollTo(0, y);
+      btn.classList.toggle('done', !done);
+      btn.querySelector('.step-num').textContent = !done ? '✓' : i + 1;
+      refreshStepsReset(set.size);
     });
-  });
-  view.querySelector('#steps-reset')?.addEventListener('click', () => {
-    setCheckedSteps(id, new Set());
-    const y = window.scrollY;
-    renderDetailPage(id);
-    window.scrollTo(0, y);
   });
 
   view.querySelector('#act-shop')?.addEventListener('click', () => {
-    const n = addRecipeToShopping(r, mult);
+    const n = addRecipeToShopping(r, currentMult());
     if (!n) { toast('Recept nemá ingredience'); return; }
     toast(`Přidáno ${n} položek do nákupního seznamu`);
   });
-  view.querySelector('#d-more').addEventListener('click', e => openRecipeActions(e.currentTarget, r, mult, detailPortions));
+  view.querySelector('#d-more').addEventListener('click', e => openRecipeActions(e.currentTarget, r, currentMult(), detailPortions));
   view.querySelector('#d-share')?.addEventListener('click', () => openShareSheet(r));
 
   view.querySelector('#act-review')?.addEventListener('click', () => openReviewForm(r));
