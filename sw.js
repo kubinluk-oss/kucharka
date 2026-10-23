@@ -1,6 +1,6 @@
 // Service worker: cachuje jen soubory aplikace (shell). Data žijí ve Firebase,
 // takže požadavky mimo tento web necháváme být — aplikace potřebuje připojení.
-const CACHE = 'kucharka-v104';
+const CACHE = 'kucharka-v105';
 /* Fotky receptů a profilovek. Záměrně VLASTNÍ cache s vlastní verzí: přežije
    aktualizace appky, takže se po každé změně kódu nestahují znovu. Firebase u nich
    posílá `cache-control: private, max-age=0`, takže by je prohlížeč sám nikdy
@@ -59,7 +59,11 @@ self.addEventListener('fetch', e => {
      token, takže má jinou adresu, kterou si klienti načtou z receptu — a ta v
      uložených kopiích není. Navíc pojistka: kopii starší než den obnovíme na
      pozadí (zobrazí se hned ta uložená, čerstvá naskočí při příštím otevření). */
-  if (url.hostname === IMG_HOST) {
+  /* Jen samotné STAHOVÁNÍ obrázku (`alt=media`, bez přihlášení — klíč je v odkazu).
+     Ostatní dotazy na Storage (zjištění adresy po nahrání apod.) nesou přihlášení
+     v hlavičce a tady by o ni přišly — Firebase by je pak odmítl jako nepřihlášené. */
+  if (url.hostname === IMG_HOST && url.searchParams.get('alt') === 'media'
+      && !e.request.headers.has('Authorization')) {
     /* <img> bez crossorigin posílá požadavek v režimu no-cors a odpověď je pak
        „opaque" (status 0, ok=false, bez hlaviček) — nic by se neuložilo a stáří by
        nešlo poznat. Stahujeme proto v režimu cors: Firebase Storage posílá
