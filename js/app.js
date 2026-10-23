@@ -1,6 +1,7 @@
 // Hlavní logika aplikace: stav, synchronizace s Firebase, router a vykreslování stránek.
 import {
-  db, storage, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch,
+  db, storage, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where,
   ref, uploadString, getDownloadURL, deleteObject
 } from './firebase.js';
 import {
@@ -15,23 +16,20 @@ import {
 } from './ui.js';
 import {
   watchAuthState, showAuthGate, hideAuthGate, signOutUser, currentDisplayName, currentUid,
-  changeDisplayName, changePassword, addAllowedEmail, removeAllowedEmail, hasPasswordProvider
+  changeDisplayName, changePassword, hasPasswordProvider
 } from './auth.js';
 
 const FEEDBACK_EMAIL = 'kubin.luk@gmail.com';
 
 // Demo režim (?demo=1): ukázková data jen v paměti, do cloudu se nic nezapisuje.
-// Mutable: host bez přístupu ke cloudu do něj spadne automaticky (viz guestDemoFallback níže).
+// Mutable: přepne se do něj i host bez účtu (viz guestDemoFallback).
 const URL_DEMO = new URLSearchParams(location.search).has('demo');
 let DEMO = URL_DEMO;
 // Veřejný náhled sdíleného receptu (bez přihlášení) — jen ten jeden recept, bez nav chromu.
 let publicMode = false;
-// Host: prohlížení celé kuchařky bez přihlášení, ale bez možnosti cokoli přidat/upravit/komentovat.
-let guestMode = false;
-// Host narazil na to, že cloud ještě není nastavený (pravidla neumožňují číst bez účtu) ->
-// appka mu místo prázdné/zamčené obrazovky pustí ukázková data, aby si měl na čem zkoušet appku.
+// Host („Prohlížet bez přihlášení"): bez účtu nemá kuchařku, dostane ukázková data.
 let guestDemoFallback = false;
-function readOnly() { return publicMode || guestMode; }
+function readOnly() { return publicMode; }
 function myName() { return DEMO ? (state.profiles[0] || 'Ty') : currentDisplayName(); }
 // Vlastnictví obsahu (recept, hodnocení): primárně podle uid autora (nové záznamy
 // ho nesou v `authorUid`), u starších záznamů fallback na shodu jména. Upravovat
@@ -51,7 +49,8 @@ const state = {
   catStyles: {},             // { název: { color: 0-8, emoji: "🍲" } } — stranou kvůli kompatibilitě se starou verzí
   avatarPhotos: {},          // { jméno: url } — profilové fotky sdílené přes cloud (stranou, jako catStyles)
   profiles: [],
-  allowedEmails: [],
+  groups: [],                // skupiny, ve kterých jsem (vč. osobní) — viz Skupiny níže
+  activeGroup: null,         // id skupiny, jejíž recepty právě vidím
   loaded: false,
   sortMode: 'newest',       // 'newest' | 'alpha' | 'best'
   profileFilter: [],
@@ -61,7 +60,6 @@ const state = {
   shopping: [],             // [{ id, text, cat, done }]
   shoppingSort: 'store',    // 'store' (podle obchodu) | 'added' (v pořadí přidání)
   highScores: {},           // { jméno: nejvyšší skóre } — žebříček minihry (stranou, jako catStyles)
-  accessRequests: [],       // [{ uid, email, name }] — kdo se přihlásil a čeká na pozvání
 };
 
 let profilesAutoCreated = false;
@@ -155,70 +153,65 @@ function loadDemoData() {
   onDataChanged();
 }
 
-/* Odběry z cloudu si pamatujeme, aby šly zrušit. Jinak by po odhlášení (nebo po
-   přechodu host → přihlášený) dál visely na starém účtu: nákupní seznam by četl
-   cizí dokument, odběry by se zdvojily a zamítnuté čtení po odhlášení by místo
-   přihlášení ukázalo „Čekáš na schválení". */
+/* Odběry z cloudu si pamatujeme, aby šly zrušit. Jsou ve dvou skupinách:
+   - účtové (seznam mých skupin, nákupní seznam) — žijí, dokud jsem přihlášený;
+   - data aktivní skupiny (recepty, kategorie…) — ruší se při přepnutí skupiny.
+   Bez rušení by po odhlášení nebo přepnutí dál visely na starých datech a stará
+   skupina by přepisovala stav té nové. */
 let unsubs = [];
-function listen(target, onNext, onErr) { unsubs.push(onSnapshot(target, onNext, onErr)); }
-function unsubscribeAll() { unsubs.forEach(u => u()); unsubs = []; }
+let groupUnsubs = [];
+function listen(target, onNext, onErr, bucket = unsubs) { bucket.push(onSnapshot(target, onNext, onErr)); }
+function unsubscribeGroup() { groupUnsubs.forEach(u => u()); groupUnsubs = []; }
+function unsubscribeAll() { unsubscribeGroup(); unsubs.forEach(u => u()); unsubs = []; }
+
+// Cesty k datům AKTIVNÍ skupiny: groups/{gid}/recipes/…, groups/{gid}/meta/…
+const gdoc = (...path) => doc(db, 'groups', state.activeGroup, ...path);
 
 function subscribe() {
   unsubscribeAll();
-  profilesAutoCreated = false;
-  profilesLoaded = false;
   if (DEMO) { loadDemoData(); return; }
+  subscribeShopping();
+  subscribeGroups();
+}
 
-  listen(doc(db, 'meta', 'categories'), d => {
+// Data jedné skupiny. Struktura dokumentů je stejná jako dřív u jediné společné
+// kuchařky, jen leží pod groups/{gid}.
+function subscribeGroupData(gid) {
+  const at = (...p) => doc(db, 'groups', gid, ...p);
+  const on = (target, onNext, label) =>
+    listen(target, onNext, err => console.error(label + ' sync:', err), groupUnsubs);
+
+  on(at('meta', 'categories'), d => {
     state.categories = (d.exists() && d.data().list) ? d.data().list : [...DEFAULT_CATS];
     onDataChanged();
-  }, err => console.error('categories sync:', err));
+  }, 'categories');
 
-  listen(doc(db, 'meta', 'profiles'), d => {
+  on(at('meta', 'profiles'), d => {
     state.profiles = (d.exists() && d.data().list) ? d.data().list : [];
     profilesLoaded = true;
     autoCreateProfiles();
-  }, err => console.error('profiles sync:', err));
+  }, 'profiles');
 
-  if (!guestMode) {
-    listen(doc(db, 'meta', 'allowedEmails'), d => {
-      state.allowedEmails = (d.exists() && d.data().list) ? d.data().list : [];
-      if (currentRoute?.page === 'settings') renderSettingsPage();
-    }, err => console.error('allowedEmails sync:', err));
-    subscribeShopping();
-  } else {
-    loadShoppingLocal();  // host bez účtu: seznam jen lokálně v prohlížeči
-  }
-
-  // vzhled kategorií (barva + emoji) — samostatný dokument, aby ho stará verze nepřepsala
-  listen(doc(db, 'meta', 'catStyles'), d => {
+  // vzhled kategorií (barva + emoji)
+  on(at('meta', 'catStyles'), d => {
     state.catStyles = (d.exists() && d.data().map) ? d.data().map : {};
     onDataChanged();
-  }, err => console.error('catStyles sync:', err));
+  }, 'catStyles');
 
-  // profilové fotky (jméno -> url), sdílené přes cloud — aby je viděli i ostatní
-  // u svých hodnocení. Vlastní fotku máme i lokálně (instant/offline), viz photoFor.
-  listen(doc(db, 'meta', 'avatarPhotos'), d => {
+  // profilové fotky (jméno -> url), ať je ostatní vidí u hodnocení
+  on(at('meta', 'avatarPhotos'), d => {
     state.avatarPhotos = (d.exists() && d.data().map) ? d.data().map : {};
+    syncMyAvatarInto(gid);
     renderProfileButtons();
     onDataChanged();
-  }, err => console.error('avatarPhotos sync:', err));
+  }, 'avatarPhotos');
 
-  // žádosti o přístup — kdo se přihlásil, ale ještě není na seznamu pozvaných
-  listen(collection(db, 'accessRequests'), snap => {
-    state.accessRequests = [];
-    snap.forEach(d => state.accessRequests.push({ ...d.data(), uid: d.id }));
-    // ukazují se jen v Nastavení (to se do paměti stránek neukládá) — jinde nic nepřekreslovat
-    if (currentRoute?.page === 'settings') renderSettingsPage();
-  }, err => console.error('accessRequests sync:', err));
-
-  // žebříček minihry (jméno -> nejvyšší skóre), sdílený přes cloud
-  listen(doc(db, 'meta', 'highScores'), d => {
-    // čte ho jen hra, a ta si žebříček sestaví sama při vykreslení / konci kola
+  // žebříček minihry — čte ho jen hra, a ta si ho sestaví sama při vykreslení
+  on(at('meta', 'highScores'), d => {
     state.highScores = (d.exists() && d.data().map) ? d.data().map : {};
-  }, err => console.error('highScores sync:', err));
+  }, 'highScores');
 
-  listen(collection(db, 'recipes'), snap => {
+  listen(collection(db, 'groups', gid, 'recipes'), snap => {
     state.recipes = [];
     snap.forEach(d => state.recipes.push({ ...d.data(), id: d.id }));
     state.loaded = true;
@@ -226,34 +219,238 @@ function subscribe() {
     onDataChanged();
   }, err => {
     console.error('recipes sync:', err);
-    if (!DEMO && err.code === 'permission-denied') {
-      if (guestMode) {
-        // Host nemá do kuchařky přístup (pravidla pouštějí jen pozvané) -> místo
-        // prázdné/zamčené obrazovky mu pustíme ukázková data, ať appku vidí v chodu.
-        unsubscribeAll();   // ať zbylé odběry nepřepíšou ukázková data skutečnými
-        guestMode = false;
-        guestDemoFallback = true;
-        DEMO = true;
-        document.body.classList.remove('public-view');
-        showGuestBanner('Ukázková data — kuchařka je jen pro pozvané', 'Přihlásit se');
-        loadDemoData();
-        toast('Kuchařka je jen pro pozvané — zatím se koukáš na ukázková data');
-      } else {
-        showAuthGate('pending-access');
-      }
+    // Do skupiny už nesmím (někdo mě odebral) -> zpátky do osobní kuchařky.
+    if (err.code === 'permission-denied' && gid !== personalGroupId()) {
+      switchGroup(personalGroupId());
       return;
     }
     state.loaded = true;
     onDataChanged();
     alertDialog('Chyba připojení', 'Nepodařilo se načíst data z cloudu. Zkontroluj připojení k internetu.');
+  }, groupUnsubs);
+}
+
+/* ================= Skupiny =================
+   Každý přihlášený má svou OSOBNÍ kuchařku (skupina `p_<uid>`, jen pro něj, bez kódu).
+   Sdílet se dá přes další skupiny: kdo zná 6místný kód, připojí se. Skupin může mít
+   člověk víc a přepíná mezi nimi v Nastavení — název skupiny se jinde nezobrazuje.
+
+   Firestore:
+     groups/{gid}         { name, code, ownerUid, members[], memberNames{uid:jméno}, personal }
+     groups/{gid}/recipes, groups/{gid}/meta/{categories|catStyles|profiles|avatarPhotos|highScores}
+     joinCodes/{kód}      { gid } — jen přes přímý dotaz na konkrétní kód (nejde je vypsat)
+   Připojení: zápis, který přidá JEN mě do `members` a nese `joinProof` = kód skupiny;
+   pravidla ho pustí, jen když kód sedí. Správce (`ownerUid`) smí skupinu přejmenovat,
+   změnit kód, odebírat členy a smazat ji. */
+const personalGroupId = () => 'p_' + currentUid();
+const groupStoreKey = () => 'kucharka-group-' + currentUid();
+const activeGroupObj = () => state.groups.find(g => g.id === state.activeGroup) || null;
+const isGroupOwner = g => !!g && g.ownerUid === currentUid();
+
+// Kód bez snadno zaměnitelných znaků (0/O, 1/I/L): 31^6 ≈ 900 milionů kombinací.
+const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function newJoinCode() {
+  return [...crypto.getRandomValues(new Uint32Array(6))].map(n => CODE_ABC[n % CODE_ABC.length]).join('');
+}
+const normCode = c => (c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Osobní kuchařku založíme při prvním přihlášení.
+async function ensurePersonalGroup() {
+  const gref = doc(db, 'groups', personalGroupId());
+  const snap = await getDoc(gref);
+  if (snap.exists()) return;
+  await setDoc(gref, {
+    name: 'Moje kuchařka', personal: true, ownerUid: currentUid(),
+    members: [currentUid()], memberNames: { [currentUid()]: myName() }, createdAt: Date.now(),
   });
+}
+
+async function subscribeGroups() {
+  try { await ensurePersonalGroup(); }
+  catch (e) { console.error('personal group:', e); }
+  let first = true;
+  listen(query(collection(db, 'groups'), where('members', 'array-contains', currentUid())), snap => {
+    state.groups = snap.docs.map(d => ({ ...d.data(), id: d.id }))
+      .sort((a, b) => (b.personal ? 1 : 0) - (a.personal ? 1 : 0) || (a.name || '').localeCompare(b.name || '', 'cs'));
+    const has = id => id && state.groups.some(g => g.id === id);
+    let saved = null;
+    try { saved = localStorage.getItem(groupStoreKey()); } catch { /* soukromý režim */ }
+    if (!has(state.activeGroup)) {
+      // nikdy nevybráno, nebo mě ze skupiny právě odebrali
+      if (state.activeGroup && !first) toast('Ve skupině už nejsi — přepínám na tvou kuchařku');
+      switchGroup(pendingShareGroup && has(pendingShareGroup) ? pendingShareGroup : has(saved) ? saved : personalGroupId());
+    } else if (currentRoute?.page === 'settings') {
+      renderSettingsPage();
+    }
+    first = false;
+  }, err => console.error('groups sync:', err));
+}
+
+// Přepne appku na data jiné skupiny. Všechno, co patřilo té předchozí (recepty,
+// kategorie, schované stránky, zvolené porce…), se zahodí.
+function switchGroup(gid) {
+  if (!gid) return;
+  unsubscribeGroup();
+  state.activeGroup = gid;
+  try { localStorage.setItem(groupStoreKey(), gid); } catch { /* soukromý režim */ }
+  Object.assign(state, {
+    recipes: [], categories: [], catStyles: {}, avatarPhotos: {}, profiles: [], highScores: {},
+    profileFilter: [], loaded: false,
+  });
+  profilesLoaded = false;
+  profilesAutoCreated = false;
+  portionsById.clear();
+  subscribeGroupData(gid);
+  onDataChanged();   // zahodí schované stránky a překreslí aktuální (zatím kostrou načítání)
+}
+
+async function createGroup(name) {
+  const me = currentUid();
+  const gref = doc(collection(db, 'groups'));
+  // Kód musí být unikátní: obsazený kód pravidla odmítnou (joinCodes jde jen založit,
+  // ne přepsat) a celá dávka se zruší — zkusíme jiný.
+  for (let i = 0; ; i++) {
+    const code = newJoinCode();
+    const b = writeBatch(db);
+    b.set(gref, {
+      name, code, personal: false, ownerUid: me,
+      members: [me], memberNames: { [me]: myName() }, createdAt: Date.now(),
+    });
+    b.set(doc(db, 'joinCodes', code), { gid: gref.id });
+    try { await b.commit(); return gref.id; }
+    catch (e) { if (i >= 4) throw e; }
+  }
+}
+
+// Vrací id skupiny, nebo null, když kód neexistuje.
+async function joinGroup(rawCode) {
+  const code = normCode(rawCode);
+  if (code.length !== 6) return null;
+  const snap = await getDoc(doc(db, 'joinCodes', code));
+  if (!snap.exists()) return null;
+  const gid = snap.data().gid;
+  if (!state.groups.some(g => g.id === gid)) {
+    await updateDoc(doc(db, 'groups', gid), {
+      members: arrayUnion(currentUid()),
+      [`memberNames.${currentUid()}`]: myName(),
+      joinProof: code,
+    });
+  }
+  return gid;
+}
+
+async function renameGroup(g, name) {
+  await updateDoc(doc(db, 'groups', g.id), { name });
+}
+
+// Nový kód (např. když ten starý unikl). Starý přestane platit, členové zůstávají.
+async function regenerateCode(g) {
+  for (let i = 0; ; i++) {
+    const code = newJoinCode();
+    const b = writeBatch(db);
+    b.update(doc(db, 'groups', g.id), { code });
+    b.set(doc(db, 'joinCodes', code), { gid: g.id });
+    if (g.code) b.delete(doc(db, 'joinCodes', g.code));
+    try { await b.commit(); return code; }
+    catch (e) { if (i >= 4) throw e; }
+  }
+}
+
+async function removeMember(g, uid) {
+  await updateDoc(doc(db, 'groups', g.id), {
+    members: arrayRemove(uid),
+    [`memberNames.${uid}`]: deleteField(),
+  });
+}
+
+// Odchod ze skupiny. Odchází-li správce, předá správu dalšímu členovi.
+async function leaveGroup(g) {
+  const me = currentUid();
+  const upd = { members: arrayRemove(me), [`memberNames.${me}`]: deleteField() };
+  if (isGroupOwner(g)) upd.ownerUid = g.members.find(u => u !== me);
+  await updateDoc(doc(db, 'groups', g.id), upd);
+}
+
+// Smazání skupiny i se vším obsahem (jen správce, osobní kuchařka nejde smazat).
+async function deleteGroup(g) {
+  const recipes = await getDocs(collection(db, 'groups', g.id, 'recipes'));
+  const refs = recipes.docs.map(d => d.ref);
+  for (const m of ['categories', 'catStyles', 'profiles', 'avatarPhotos', 'highScores'])
+    refs.push(doc(db, 'groups', g.id, 'meta', m));
+  for (let i = 0; i < refs.length; i += 450) {
+    const b = writeBatch(db);
+    refs.slice(i, i + 450).forEach(r => b.delete(r));
+    await b.commit();
+  }
+  recipes.docs.forEach(d => deleteOwnPhoto(d.data().photo, g.id));
+  const b = writeBatch(db);
+  if (g.code) b.delete(doc(db, 'joinCodes', g.code));
+  b.delete(doc(db, 'groups', g.id));
+  await b.commit();
+}
+
+/* Smaže fotku receptu ze Storage — ale jen když leží ve složce TÉHLE skupiny.
+   Kopie receptu a recepty převedené ze staré společné kuchařky můžou ukazovat
+   na soubor, který patří jinam; ten nesmíme vzít ostatním. */
+async function deleteOwnPhoto(url, gid = state.activeGroup) {
+  if (!url || !url.includes(`/o/groups%2F${gid}%2F`)) return;
+  try { await deleteObject(ref(storage, url)); } catch { /* soubor nemusí existovat */ }
+}
+
+// Zkopíruje recept do jiné skupiny jako NOVÝ recept, jehož jsem autorem (smím ho tam
+// upravovat). Hodnocení se nepřenášejí, fotka dostane vlastní soubor — kdyby ji
+// původní recept později smazal, kopie o ni nepřijde.
+async function copyRecipeToGroup(r, gid) {
+  const id = uid();
+  const { id: _id, _match, updatedAt, ...rest } = r;
+  const data = { ...rest, reviews: [], shared: false, authorUid: currentUid(), createdAt: Date.now() };
+  if (r.photo && r.photo.startsWith('http')) {
+    try {
+      const blob = await (await fetch(r.photo)).blob();
+      const dataUrl = await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result); fr.onerror = rej;
+        fr.readAsDataURL(blob);
+      });
+      data.photo = await uploadPhoto(`groups/${gid}/photos/${id}.jpg`, dataUrl);
+    } catch (e) { console.error('copy photo:', e); /* necháme odkaz na původní fotku */ }
+  }
+  await setDoc(doc(db, 'groups', gid, 'recipes', id), data);
+  // kategorie, které cílová skupina nemá, do ní doplníme
+  const cats = recipeCategories(r);
+  if (cats.length) {
+    const cref = doc(db, 'groups', gid, 'meta', 'categories');
+    const cd = await getDoc(cref);
+    const list = (cd.exists() && cd.data().list) ? cd.data().list : [...DEFAULT_CATS];
+    const missing = cats.filter(c => !list.includes(c));
+    if (missing.length || !cd.exists()) await setDoc(cref, { list: [...list, ...missing] });
+  }
+}
+
+// Moje jméno ve všech skupinách (seznam členů v Nastavení).
+async function updateMyNameInGroups(name) {
+  await Promise.all(state.groups.map(g =>
+    updateDoc(doc(db, 'groups', g.id), new FieldPath('memberNames', currentUid()), name)
+      .catch(e => console.error('member name:', e))));
+}
+
+/* Profilová fotka je jedna pro celý účet (avatars/{uid}.jpg), ale mapy jméno -> url
+   jsou v každé skupině zvlášť. Když v mapě skupiny moje aktuální fotka chybí (třeba
+   jsem se právě připojil), doplním ji tam. */
+function syncMyAvatarInto(gid) {
+  let url = '';
+  try { url = localStorage.getItem('kucharka-avatar-url') || ''; } catch { /* soukromý režim */ }
+  const me = myName();
+  if (!url || !me || state.avatarPhotos[me] === url || gid !== state.activeGroup) return;
+  setDoc(doc(db, 'groups', gid, 'meta', 'avatarPhotos'), { map: { [me]: url } }, { merge: true })
+    .catch(e => console.error('avatar sync:', e));
 }
 
 // Jméno přihlášeného uživatele bez profilu -> profil se doplní automaticky (jen jednou po načtení).
 // Čeká na OBA dokumenty: kdyby recepty dorazily dřív než profily, zapsal by se seznam
 // sestavený z prázdna a profily bez receptů (jen hodnotící) by z cloudu zmizely.
 function autoCreateProfiles() {
-  if (profilesAutoCreated || guestMode || !profilesLoaded || !state.loaded) return;
+  if (profilesAutoCreated || !profilesLoaded || !state.loaded) return;
   profilesAutoCreated = true;
   const missing = new Set();
   const me = myName();
@@ -271,7 +468,7 @@ function autoCreateProfiles() {
 // Sdílené dokumenty v kolekci meta. V demu se neukládá nic (data žijí jen v paměti).
 function saveMeta(id, payload, errMsg) {
   if (DEMO) return Promise.resolve();
-  return setDoc(doc(db, 'meta', id), payload)
+  return setDoc(gdoc('meta', id), payload)
     .catch(e => { console.error(e); toast(errMsg); });
 }
 function saveCategories() { return saveMeta('categories', { list: state.categories }, 'Kategorie se nepodařilo uložit'); }
@@ -299,7 +496,7 @@ function loadShoppingLocal() {
   catch { state.shopping = []; }
 }
 
-function shoppingIsLocal() { return DEMO || guestMode || !currentUid(); }
+function shoppingIsLocal() { return DEMO || !currentUid(); }
 
 function saveShopping() {
   /* Seznam se právě změnil, takže jeho schovaná podoba je neplatná. Zahazujeme ji
@@ -376,9 +573,9 @@ async function saveRecipe(recipe) {
     const id = data.id;
     delete data.id;
     if (data.photo && data.photo.startsWith('data:')) {
-      data.photo = await uploadPhoto('photos/' + id + '.jpg', data.photo);
+      data.photo = await uploadPhoto(`groups/${state.activeGroup}/photos/${id}.jpg`, data.photo);
     }
-    await setDoc(doc(db, 'recipes', id), data);
+    await setDoc(gdoc('recipes', id), data);
     hideLoader();
     return true;
   } catch (e) {
@@ -397,9 +594,10 @@ async function deleteRecipe(id) {
   }
   showLoader('Mažu…');
   try {
+    const photo = getRecipe(id)?.photo || '';
     // nejdřív recept, pak fotka — při selhání by jinak zůstal recept s rozbitou fotkou
-    await deleteDoc(doc(db, 'recipes', id));
-    try { await deleteObject(ref(storage, 'photos/' + id + '.jpg')); } catch { /* fotka nemusí existovat */ }
+    await deleteDoc(gdoc('recipes', id));
+    await deleteOwnPhoto(photo);
     hideLoader();
     return true;
   } catch (e) {
@@ -448,7 +646,7 @@ async function renameProfileEverywhere(oldName, newName) {
         upd.reviews = r.reviews.map(rv => rv.author === oldName ? { ...rv, author: newName } : rv);
         changed = true;
       }
-      if (changed) { batch.update(doc(db, 'recipes', r.id), upd); dirty++; }
+      if (changed) { batch.update(gdoc('recipes', r.id), upd); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -490,7 +688,7 @@ async function deleteCategoryEverywhere(cat) {
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
-      if (recipeCategories(r).includes(cat)) { batch.update(doc(db, 'recipes', r.id), withoutCategory(r, cat)); dirty++; }
+      if (recipeCategories(r).includes(cat)) { batch.update(gdoc('recipes', r.id), withoutCategory(r, cat)); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -522,7 +720,7 @@ async function renameCategoryEverywhere(oldName, newName) {
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
-      if (recipeCategories(r).includes(oldName)) { batch.update(doc(db, 'recipes', r.id), withRenamedCategory(r, oldName, newName)); dirty++; }
+      if (recipeCategories(r).includes(oldName)) { batch.update(gdoc('recipes', r.id), withRenamedCategory(r, oldName, newName)); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -1015,11 +1213,6 @@ let editorMounted = false;
 
 function render() {
   currentRoute = parseRoute();
-  if (guestMode && currentRoute.page === 'editor') {
-    toast('Přihlas se, abys mohl přidat nebo upravit recept');
-    location.hash = '#/';
-    return;
-  }
   closeAllSheets();
   document.querySelectorAll('.menu-backdrop').forEach(m => m.remove());   // zavři „•••"/filtr popover při navigaci
   if (stopGame) { stopGame(); stopGame = null; }   // zastav běžící minihru
@@ -1252,7 +1445,7 @@ function renderCatsPage() {
           <span class="ct-count">${noneCount}</span>
         </a>` : ''}
     </div>
-    ${guestMode ? '' : '<button class="ghost-btn" id="cats-manage">Upravit kategorie</button>'}`;
+    <button class="ghost-btn" id="cats-manage">Upravit kategorie</button>`;
   view.querySelector('#cats-manage')?.addEventListener('click', openCategoryManager);
   renderProfileButtons();
 }
@@ -1777,11 +1970,14 @@ function openRecipeActions(anchorEl, r, mult, portions) {
   if (wakeLockSupported)
     list.push({ icon: sunSvg, label: 'Nezhasínat displej', checked: wakeLockOn, onClick: () => setWakeLock(!wakeLockOn) });
   list.push({ icon: aiSvg, label: 'Kopírovat pro AI', onClick: copyAi });
+  if (!ro && !DEMO && state.groups.length > 1)
+    list.push({ icon: copySvg, label: 'Zkopírovat do jiné kuchařky', onClick: () => openCopyToGroup(r) });
   if (mine) list.push({ icon: trashSvg, label: 'Smazat recept', danger: true, onClick: del });
   openContextMenu(anchorEl, { top, list });
 }
 
 /* ================= Nákupní seznam (stránka) ================= */
+const copySvg = `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M15.5 8.5V6.5A2.5 2.5 0 0 0 13 4H6.5A2.5 2.5 0 0 0 4 6.5V13a2.5 2.5 0 0 0 2.5 2.5h2" fill="none" stroke="currentColor" stroke-width="1.9"/></svg>`;
 const bagSvg = `<svg viewBox="0 0 24 24" width="46" height="46"><path d="M7 8V6.5a5 5 0 0 1 10 0V8m-13 0h16l-1 12.2a1.8 1.8 0 0 1-1.8 1.8H6.8A1.8 1.8 0 0 1 5 20.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 
 function renderShoppingPage() {
@@ -2160,8 +2356,11 @@ function shoppingListPlainText() {
 }
 
 /* ================= Sdílení receptu bez přihlášení ================= */
+// Odkaz nese i skupinu (?g=…), recept leží pod groups/{gid}/recipes. Staré odkazy
+// bez ?g míří do původní společné kuchařky (kolekce `recipes`).
 function shareUrl(r) {
-  return location.origin + location.pathname + '#/recept/' + encodeURIComponent(r.id);
+  const g = state.activeGroup ? '?g=' + encodeURIComponent(state.activeGroup) : '';
+  return location.origin + location.pathname + g + '#/recept/' + encodeURIComponent(r.id);
 }
 function openShareSheet(r) {
   const canShare = !!navigator.share;
@@ -2943,8 +3142,8 @@ function openEmojiPicker(onPick) {
 function renderSettingsPage() {
   const pref = getThemePref();
   const me = myName();
-  const loggedIn = !DEMO && !guestMode && !guestDemoFallback;   // skutečný účet (heslo, odhlášení, allowlist)
-  const canEdit = !guestMode && !publicMode && !guestDemoFallback;  // úprava jména/fotky/barvy — i v demu
+  const loggedIn = !DEMO && !guestDemoFallback;   // skutečný účet (heslo, odhlášení, skupiny)
+  const canEdit = !publicMode && !guestDemoFallback;  // úprava jména/fotky/barvy — i v demu
   const init = profileInitial();
   const photo = photoFor(me);
   view.innerHTML = `
@@ -2959,7 +3158,7 @@ function renderSettingsPage() {
           ${avatarInnerHtml()}
         </button>
         <div class="page-title">${escapeHtml(me || 'Host')}</div>
-        <div class="page-sub">${loggedIn ? 'tvůj profil a nastavení' : guestMode ? 'prohlížíš jako host' : 'ukázkový režim'}</div>
+        <div class="page-sub">${loggedIn ? 'tvůj profil a nastavení' : 'ukázkový režim'}</div>
       </div>
     </div>
 
@@ -2977,7 +3176,7 @@ function renderSettingsPage() {
       </div>
     </div>
 
-    ${guestMode || guestDemoFallback ? `
+    ${guestDemoFallback ? `
     <div class="settings-group">
       <h3>Účet</h3>
       <div class="settings-card">
@@ -3008,62 +3207,46 @@ function renderSettingsPage() {
       </div>
     </div>` : ''}
 
-    ${loggedIn && state.accessRequests.length ? `
-    <div class="settings-group">
-      <h3>Žádosti o přístup</h3>
-      <div class="settings-card">
-        ${state.accessRequests.map(r => `
-          <div class="settings-row req-row">
-            ${personAvatarHtml(r.name || r.email)}
-            <span class="row-label req-who">
-              ${r.name ? `<b>${escapeHtml(r.name)}</b>` : ''}
-              <span class="req-mail">${escapeHtml(r.email || '')}</span>
-            </span>
-            <span class="req-actions">
-              <button class="req-no" data-req-deny="${escapeHtml(r.uid)}" aria-label="Odmítnout">✕</button>
-              <button class="req-yes" data-req-ok="${escapeHtml(r.uid)}" aria-label="Pustit dovnitř">Pustit</button>
-            </span>
-          </div>`).join('')}
-      </div>
-    </div>` : ''}
-
     ${loggedIn ? `
     <div class="settings-group">
-      <h3>Kdo má přístup</h3>
+      <h3>Kuchařky</h3>
       <div class="settings-card">
-        ${state.allowedEmails.map(e => `
-          <div class="settings-row">
-            <span class="row-label">${escapeHtml(e)}</span>
-            <button data-allow-del="${escapeHtml(e)}" aria-label="Odebrat přístup">${trashSvg}</button>
+        ${state.groups.map(g => `
+          <div class="settings-row grp-row">
+            <button class="grp-pick" data-grp-pick="${escapeHtml(g.id)}" aria-pressed="${g.id === state.activeGroup}">
+              <span class="grp-dot${g.id === state.activeGroup ? ' on' : ''}"></span>
+              <span class="grp-text">
+                <span class="grp-name">${escapeHtml(g.name || 'Bez názvu')}</span>
+                <span class="grp-sub">${g.personal ? 'jen pro tebe' : memberCountText((g.members || []).length)}</span>
+              </span>
+            </button>
+            ${g.personal ? '' : `
+            <button class="grp-code" data-copy-code="${escapeHtml(g.code || '')}" aria-label="Zkopírovat kód">${escapeHtml(g.code || '')}</button>
+            <button class="grp-more" data-grp-more="${escapeHtml(g.id)}" aria-label="Spravovat skupinu">›</button>`}
           </div>`).join('')}
-        <button class="settings-row" id="allow-add" style="color:var(--accent);font-weight:700">
-          <span class="row-label">＋ Pozvat</span>
+        <button class="settings-row" id="grp-create">
+          <span class="row-label" style="color:var(--accent);font-weight:700">＋ Vytvořit skupinu</span>
+        </button>
+        <button class="settings-row" id="grp-join">
+          <span class="row-label" style="color:var(--accent);font-weight:700">Připojit se kódem</span>
         </button>
       </div>
-    </div>` : ''}
-
-    ${state.profiles.length ? `
-    <div class="settings-group">
-      <h3>Kdo je v kuchařce</h3>
-      <div class="settings-card">
-        ${state.profiles.map(p => `<div class="settings-row"><span class="row-label row-with-avatar">${personAvatarHtml(p)}${escapeHtml(p)}</span></div>`).join('')}
-      </div>
+      <p class="settings-hint">Každá kuchařka má vlastní recepty a kategorie. Kód skupiny pošli tomu, s kým chceš recepty sdílet.</p>
     </div>` : ''}
 
     <div class="settings-group">
       <h3>Kuchařka</h3>
       <div class="settings-card">
-        ${guestMode ? '' : `
         <button class="settings-row" id="set-cats">
           <span class="row-label">Spravovat kategorie</span><span class="row-chevron">›</span>
-        </button>`}
+        </button>
         <button class="settings-row" id="set-feedback">
           <span class="row-label">Zpětná vazba</span><span class="row-chevron">›</span>
         </button>
       </div>
     </div>
 
-    <p class="detail-footnote" id="set-foot">${guestMode ? 'Prohlížíš jako host · bez úprav' : guestDemoFallback ? 'Ukázková data · kuchařka je jen pro pozvané' : 'Kuchařka · uzamčeno jen pro pozvané'}</p>
+    <p class="detail-footnote" id="set-foot">${guestDemoFallback || DEMO ? 'Kuchařka · ukázková data' : 'Kuchařka'}</p>
   </div>`;
 
   view.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
@@ -3087,44 +3270,40 @@ function renderSettingsPage() {
     if (ok) await signOutUser();
   });
 
-  view.querySelector('#allow-add')?.addEventListener('click', async () => {
-    const email = await promptDialog('Pozvat do kuchařky', 'Zadej e-mail, který smí být přihlášen.', { placeholder: 'jméno@email.cz', okLabel: 'Pozvat' });
-    if (!email) return;
+  view.querySelectorAll('[data-grp-pick]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.grpPick === state.activeGroup) return;
+    switchGroup(b.dataset.grpPick);
+    toast('Kuchařka přepnuta');
+  }));
+  view.querySelectorAll('[data-copy-code]').forEach(b => b.addEventListener('click', () =>
+    copyText(b.dataset.copyCode, 'Kód zkopírován')));
+  view.querySelectorAll('[data-grp-more]').forEach(b => b.addEventListener('click', () => {
+    const g = state.groups.find(x => x.id === b.dataset.grpMore);
+    if (g) openGroupSheet(g);
+  }));
+  view.querySelector('#grp-create')?.addEventListener('click', async () => {
+    const name = (await promptDialog('Nová skupina', 'Název uvidí jen členové, a to jen tady v Nastavení.', { placeholder: 'Třeba Rodina nebo Byt 4', okLabel: 'Vytvořit' }))?.trim();
+    if (!name) return;
+    showLoader('Zakládám…');
     try {
-      state.allowedEmails = await addAllowedEmail(email);
-      toast('Pozváno — ať si založí účet se stejným e-mailem');
-      renderSettingsPage();
-    } catch { alertDialog('Nepovedlo se', 'E-mail se nepodařilo přidat.'); }
+      const gid = await createGroup(name);
+      hideLoader();
+      switchGroup(gid);
+      toast('Skupina vytvořena — pošli ostatním její kód');
+    } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Skupinu se nepodařilo vytvořit.'); }
   });
-  view.querySelectorAll('[data-allow-del]').forEach(b => b.addEventListener('click', async () => {
-    const email = b.dataset.allowDel;
-    const ok = await confirmDialog('Odebrat přístup?', `„${email}" už se nebude moct přihlásit.`, { okLabel: 'Odebrat', danger: true });
-    if (!ok) return;
+  view.querySelector('#grp-join')?.addEventListener('click', async () => {
+    const code = await promptDialog('Připojit se ke skupině', 'Zadej 6místný kód, který ti poslal někdo ze skupiny.', { placeholder: 'např. K7P4QX', okLabel: 'Připojit' });
+    if (!code) return;
+    showLoader('Připojuju…');
     try {
-      state.allowedEmails = await removeAllowedEmail(email);
-      renderSettingsPage();
-    } catch { alertDialog('Nepovedlo se', 'Přístup se nepodařilo odebrat.'); }
-  }));
-
-  // žádosti o přístup: „Pustit" přidá e-mail na seznam a žádost smaže
-  view.querySelectorAll('[data-req-ok]').forEach(b => b.addEventListener('click', async () => {
-    const req = state.accessRequests.find(r => r.uid === b.dataset.reqOk);
-    if (!req?.email) return;
-    b.disabled = true;
-    try {
-      state.allowedEmails = await addAllowedEmail(req.email);
-      await deleteDoc(doc(db, 'accessRequests', req.uid));
-      toast(`${req.name || req.email} má přístup`);
-    } catch (e) { console.error(e); alertDialog('Nepovedlo se', 'Přístup se nepodařilo udělit.'); b.disabled = false; }
-  }));
-  view.querySelectorAll('[data-req-deny]').forEach(b => b.addEventListener('click', async () => {
-    const req = state.accessRequests.find(r => r.uid === b.dataset.reqDeny);
-    if (!req) return;
-    const ok = await confirmDialog('Odmítnout žádost?', `„${req.email}" se do kuchařky nedostane. Požádat může znovu.`, { okLabel: 'Odmítnout', danger: true });
-    if (!ok) return;
-    try { await deleteDoc(doc(db, 'accessRequests', req.uid)); }
-    catch (e) { console.error(e); alertDialog('Nepovedlo se', 'Žádost se nepodařilo odmítnout.'); }
-  }));
+      const gid = await joinGroup(code);
+      hideLoader();
+      if (!gid) { alertDialog('Kód nesedí', 'Skupinu s tímhle kódem jsme nenašli. Zkontroluj ho, nebo si řekni o nový.'); return; }
+      switchGroup(gid);
+      toast('Jsi ve skupině');
+    } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Ke skupině se nepodařilo připojit.'); }
+  });
 
   view.querySelector('#set-login')?.addEventListener('click', exitGuestMode);
 
@@ -3166,12 +3345,128 @@ function openChangePassword() {
 
 // Změna jména — promítne se do všech receptů a hodnocení (renameProfileEverywhere).
 // V demu není přihlášený uživatel, takže se přeskočí changeDisplayName (jen lokální).
+function memberCountText(n) {
+  return n === 1 ? '1 člen' : n >= 2 && n <= 4 ? `${n} členové` : `${n} členů`;
+}
+
+// Správa skupiny: kód (klepnutím zkopírovat), členové, a podle role přejmenování,
+// nový kód, odebrání členů, odchod nebo smazání.
+function openGroupSheet(gIn) {
+  const sheet = openSheet({ title: gIn.name || 'Skupina', bodyHtml: '' });
+  const me = currentUid();
+  const fresh = () => state.groups.find(x => x.id === gIn.id);
+
+  function draw() {
+    const g = fresh();
+    if (!g) { sheet.close(); return; }
+    const owner = isGroupOwner(g);
+    const others = (g.members || []).filter(u => u !== me);
+    const names = g.memberNames || {};
+    sheet.body.innerHTML = `
+      <button class="grp-code-big" id="gs-code" aria-label="Zkopírovat kód">${escapeHtml(g.code || '')}</button>
+      <p class="grp-code-cap">Klepnutím kód zkopíruješ. Kdo ho zná, může se ke skupině připojit.</p>
+      <div class="grp-members">
+        ${(g.members || []).map(u => `
+          <div class="grp-member">
+            ${personAvatarHtml(names[u] || '?')}
+            <span class="grp-mname">${escapeHtml(names[u] || 'Člen')}${u === me ? ' (ty)' : ''}</span>
+            ${u === g.ownerUid ? '<span class="grp-badge">správce</span>' : ''}
+            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze skupiny">✕</button>` : ''}
+          </div>`).join('')}
+      </div>
+      <div class="grp-actions">
+        ${owner ? `
+          <button class="btn btn-block" id="gs-rename">Přejmenovat</button>
+          <button class="btn btn-block" id="gs-newcode">Vygenerovat nový kód</button>` : ''}
+        ${!owner || others.length ? `<button class="btn btn-block btn-danger" id="gs-leave">Odejít ze skupiny</button>` : ''}
+        ${owner ? `<button class="btn btn-block btn-danger" id="gs-delete">Smazat skupinu</button>` : ''}
+      </div>`;
+    wire(g, owner, others, names);
+  }
+
+  async function run(label, fn, okMsg) {
+    showLoader(label);
+    try { await fn(); hideLoader(); if (okMsg) toast(okMsg); return true; }
+    catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Zkontroluj připojení a zkus to znovu.'); return false; }
+  }
+
+  function wire(g, owner, others, names) {
+    const $ = sel => sheet.body.querySelector(sel);
+    $('#gs-code').addEventListener('click', () => copyText(g.code, 'Kód zkopírován'));
+    sheet.body.querySelectorAll('[data-kick]').forEach(b => b.addEventListener('click', async () => {
+      const who = names[b.dataset.kick] || 'člen';
+      if (!await confirmDialog('Odebrat ze skupiny?', `${who} přestane vidět recepty téhle skupiny. Zpátky se může připojit jen s aktuálním kódem.`, { okLabel: 'Odebrat', danger: true })) return;
+      if (await run('Odebírám…', () => removeMember(g, b.dataset.kick))) setTimeout(draw, 300);
+    }));
+    $('#gs-rename')?.addEventListener('click', async () => {
+      const name = (await promptDialog('Přejmenovat skupinu', '', { value: g.name, okLabel: 'Uložit' }))?.trim();
+      if (!name || name === g.name) return;
+      if (await run('Ukládám…', () => renameGroup(g, name))) {
+        sheet.body.closest('.sheet').querySelector('.sheet-title').textContent = name;
+        setTimeout(draw, 300);
+      }
+    });
+    $('#gs-newcode')?.addEventListener('click', async () => {
+      if (!await confirmDialog('Nový kód?', 'Starý kód přestane fungovat. Členové ve skupině zůstanou.', { okLabel: 'Vygenerovat' })) return;
+      if (await run('Generuju…', () => regenerateCode(g), 'Nový kód je platný')) setTimeout(draw, 300);
+    });
+    $('#gs-leave')?.addEventListener('click', async () => {
+      const heir = owner ? (names[others[0]] || 'jiný člen') : '';
+      const msg = owner
+        ? `Přestaneš vidět recepty téhle skupiny. Správcem se stane ${heir}.`
+        : 'Přestaneš vidět recepty téhle skupiny. Vrátit se můžeš s kódem.';
+      if (!await confirmDialog('Odejít ze skupiny?', msg, { okLabel: 'Odejít', danger: true })) return;
+      if (await run('Odcházím…', () => leaveGroup(g), 'Odešel jsi ze skupiny')) {
+        sheet.close();
+        if (state.activeGroup === g.id) switchGroup(personalGroupId());
+      }
+    });
+    $('#gs-delete')?.addEventListener('click', async () => {
+      const extra = others.length ? ` Přijdou o ně i ostatní členové (${others.length}).` : '';
+      if (!await confirmDialog('Smazat skupinu?', `Smažou se všechny její recepty a kategorie a nejde to vrátit.${extra}`, { okLabel: 'Smazat', danger: true })) return;
+      if (await run('Mažu…', () => deleteGroup(g), 'Skupina smazána')) {
+        sheet.close();
+        if (state.activeGroup === g.id) switchGroup(personalGroupId());
+      }
+    });
+  }
+  draw();
+}
+
+// Výběr cílové kuchařky pro kopii receptu.
+function openCopyToGroup(r) {
+  const targets = state.groups.filter(g => g.id !== state.activeGroup);
+  const sheet = openSheet({
+    title: 'Zkopírovat do kuchařky',
+    bodyHtml: `
+      <p class="muted" style="font-size:13px;margin:0 0 12px">Vznikne samostatná kopie, kterou tam můžeš upravovat. Hodnocení se nepřenášejí.</p>
+      <div class="settings-card">
+        ${targets.map(g => `
+          <button class="settings-row" data-copy-to="${escapeHtml(g.id)}">
+            <span class="row-label">${escapeHtml(g.name || 'Bez názvu')}</span><span class="row-chevron">›</span>
+          </button>`).join('')}
+      </div>`,
+  });
+  sheet.body.querySelectorAll('[data-copy-to]').forEach(b => b.addEventListener('click', async () => {
+    showLoader('Kopíruju…');
+    try {
+      await copyRecipeToGroup(r, b.dataset.copyTo);
+      hideLoader();
+      sheet.close();
+      toast('Recept zkopírován');
+    } catch (e) {
+      console.error(e); hideLoader();
+      alertDialog('Nepovedlo se', 'Recept se nepodařilo zkopírovat.');
+    }
+  }));
+}
+
 async function renameProfile() {
   const oldName = myName();
   const newName = (await promptDialog('Změnit jméno', 'Změna se promítne do tvých receptů a hodnocení.', { value: oldName, okLabel: 'Uložit' }))?.trim();
   if (!newName || newName === oldName) return;
   try {
-    if (!DEMO) await changeDisplayName(newName);
+    if (!DEMO) { await changeDisplayName(newName); updateMyNameInGroups(newName); }
     await renameProfileEverywhere(oldName, newName);
     renderProfileButtons();
     if (currentRoute.page === 'settings') renderSettingsPage();
@@ -3233,18 +3528,25 @@ async function setMyAvatarPhoto(dataUrl) {
   const me = myName();
   if (!DEMO && currentUid() && me) {
     const url = await uploadPhoto('avatars/' + currentUid() + '.jpg', dataUrl);
+    try { localStorage.setItem('kucharka-avatar-url', url); } catch { /* plná kvóta */ }
     state.avatarPhotos = { ...state.avatarPhotos, [me]: url };
-    await saveAvatarPhotos();
+    // fotka je jedna pro celý účet -> do mapy každé mé skupiny
+    await Promise.all(state.groups.map(g =>
+      setDoc(doc(db, 'groups', g.id, 'meta', 'avatarPhotos'), { map: { [me]: url } }, { merge: true })
+        .catch(e => console.error('avatar:', e))));
   }
 }
 async function removeMyAvatarPhoto() {
   localStorage.removeItem('kucharka-avatar-photo');
+  localStorage.removeItem('kucharka-avatar-url');
   const me = myName();
   if (!DEMO && me) {
     if (state.avatarPhotos[me]) {
       const m = { ...state.avatarPhotos }; delete m[me]; state.avatarPhotos = m;
-      await saveAvatarPhotos();
     }
+    await Promise.all(state.groups.map(g =>
+      updateDoc(doc(db, 'groups', g.id, 'meta', 'avatarPhotos'), new FieldPath('map', me), deleteField())
+        .catch(() => { /* ve skupině fotku nemám */ })));
     try { if (currentUid()) await deleteObject(ref(storage, 'avatars/' + currentUid() + '.jpg')); } catch { /* soubor nemusí existovat */ }
   }
 }
@@ -3351,7 +3653,7 @@ function leaderboardHtml({ highlightScore = null } = {}) {
 
 function renderGamePage() {
   // hra je jen pro přihlášené; host/veřejný náhled se sem nedostane
-  if (readOnly()) { toast('Hra je jen pro přihlášené'); location.hash = '#/'; return; }
+  if (readOnly() || guestDemoFallback) { toast('Hra je jen pro přihlášené'); location.hash = '#/'; return; }
 
   view.innerHTML = `
   <div class="page-narrow gm-wrap">
@@ -3721,6 +4023,9 @@ function publicShareId() {
   const [a, b] = h.split('/');
   return a === 'recept' && b ? decodeURIComponent(b) : null;
 }
+// Skupina ze sdíleného odkazu. Když jsem v ní členem, po přihlášení se na ni přepne,
+// ať odkaz otevře ten správný recept.
+const pendingShareGroup = new URLSearchParams(location.search).get('g');
 
 const publicBannerEl = document.getElementById('public-banner');
 function showGuestBanner(text, btnLabel) {
@@ -3733,16 +4038,18 @@ function hideGuestBanner() {
 }
 
 // Jediná výjimka ze zámku: cílený dotaz na JEDEN výslovně odemčený (r.shared === true)
-// recept, ne plošné subscribe() na celou sbírku.
+// recept, ne plošné odebírání celé sbírky.
 async function tryPublicRecipe(id) {
   try {
-    const snap = await getDoc(doc(db, 'recipes', id));
+    const snap = await getDoc(pendingShareGroup
+      ? doc(db, 'groups', pendingShareGroup, 'recipes', id)
+      : doc(db, 'recipes', id));
     if (!snap.exists() || !snap.data().shared) return false;
     state.recipes = [{ ...snap.data(), id: snap.id }];
     state.loaded = true;
     publicMode = true;
     document.body.classList.add('public-view');
-    showGuestBanner('Kuchařka je jinak zamčená', 'Zobrazit celou kuchařku');
+    showGuestBanner('Recept sdílený z Kuchařky', 'Přihlásit se');
     hideAuthGate();
     render();
     return true;
@@ -3758,21 +4065,19 @@ function exitPublicPreview() {
   showAuthGate('signin', { onGuest: startGuestMode });
 }
 
-// Host: prohlížení celé kuchařky (recepty jsou teď čitelné pro kohokoli), bez možnosti
-// cokoli přidat/upravit/komentovat — pravidla Firestore/Storage zápisy stejně odmítnou.
-// Pokud cloud ještě pravidla nemá nasazená, subscribe() to sám přepne na ukázková data
-// (viz guestDemoFallback v recipes onSnapshot výše).
+// Host: bez účtu nemá žádnou kuchařku, takže si appku vyzkouší na ukázkových datech
+// (jen v paměti, nic se neukládá).
 function startGuestMode() {
-  guestMode = true;
+  guestDemoFallback = true;
+  DEMO = true;
   hideAuthGate();
-  showGuestBanner('Prohlížíš jako host', 'Přihlásit se');
+  showGuestBanner('Ukázková data — přihlas se a založ si vlastní kuchařku', 'Přihlásit se');
   renderProfileButtons();
   render();
   subscribe();
 }
 
 function exitGuestMode() {
-  guestMode = false;
   guestDemoFallback = false;
   DEMO = URL_DEMO;
   hideGuestBanner();
@@ -3780,7 +4085,7 @@ function exitGuestMode() {
 }
 publicBannerEl.querySelector('#public-login-btn').addEventListener('click', () => {
   if (publicMode) exitPublicPreview();
-  else if (guestMode || guestDemoFallback) exitGuestMode();
+  else if (guestDemoFallback) exitGuestMode();
 });
 
 /* ================= Start ================= */
@@ -3800,20 +4105,24 @@ if (DEMO) {
     }
     if (user && user.emailVerified) {
       publicMode = false;
-      guestMode = false;
       guestDemoFallback = false;
       DEMO = URL_DEMO;
       document.body.classList.remove('public-view');
       hideGuestBanner();
       hideAuthGate();
       renderProfileButtons();
-      if (!live) { started = live = true; render(); subscribe(); }
+      if (!live) {
+        started = live = true;
+        Object.assign(state, { recipes: [], loaded: false, groups: [], activeGroup: null });
+        render();
+        subscribe();
+      }
       return;
     }
     // odhlášení: odběry i schované stránky patřily předchozímu účtu
-    if (live) { live = false; unsubscribeAll(); pageCache.clear(); }
+    if (live) { live = false; unsubscribeAll(); pageCache.clear(); state.groups = []; state.activeGroup = null; }
     renderProfileButtons();
-    if (publicMode || guestMode || guestDemoFallback) return;
+    if (publicMode || guestDemoFallback) return;
     if (!started && shareId && await tryPublicRecipe(shareId)) return;
     showAuthGate(user ? 'verify-email' : 'signin', { onGuest: startGuestMode });
   });

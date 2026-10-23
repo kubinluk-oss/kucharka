@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
+    function groupData(gid) { return get(/databases/$(database)/documents/groups/$(gid)).data; }
+    function isGroupMember(gid) { return verified() && request.auth.uid in groupData(gid).members; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // ---------- Skupiny ----------
+    match /groups/{gid} {
+      // člen čte svou skupinu; neexistující dokument smí zkusit (zjištění, jestli už má osobní kuchařku)
+      allow get: if verified() && (resource == null || request.auth.uid in resource.data.members);
+      allow list: if verified() && request.auth.uid in resource.data.members;
+
+      // založení: jen já jako správce a jediný člen; id p_<uid> je vyhrazené pro MOU osobní kuchařku
+      allow create: if verified()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.members == [request.auth.uid]
+        && (gid == 'p_' + request.auth.uid) == (request.resource.data.personal == true)
+        && (!gid.matches('p_.*') || gid == 'p_' + request.auth.uid);
+
+      allow update: if verified() && (
+        // správce: přejmenovat, nový kód, odebrat členy, předat správu (sám zůstává/odchází)
+        (resource.data.ownerUid == request.auth.uid
+          && request.resource.data.personal == resource.data.personal
+          && request.resource.data.ownerUid in request.resource.data.members)
+        ||
+        // připojení kódem: přidám jen sebe a musím znát aktuální kód
+        (!(request.auth.uid in resource.data.members)
+          && resource.data.personal != true
+          && changed().hasOnly(['members', 'memberNames', 'joinProof'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().union([request.auth.uid].toSet())
+          && request.resource.data.joinProof == resource.data.code)
+        ||
+        // odchod člena (ne správce): odeberu jen sebe
+        (request.auth.uid in resource.data.members
+          && resource.data.ownerUid != request.auth.uid
+          && changed().hasOnly(['members', 'memberNames'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet()))
+        ||
+        // změna mého jména v seznamu členů
+        (request.auth.uid in resource.data.members
+          && changed().hasOnly(['memberNames'])
+          && request.resource.data.memberNames.diff(resource.data.memberNames).affectedKeys().hasOnly([request.auth.uid]))
+      );
+
+      allow delete: if verified() && resource.data.ownerUid == request.auth.uid && resource.data.personal != true;
+
+      match /recipes/{rid} {
+        allow get: if resource.data.shared == true || isGroupMember(gid);
+        allow list: if isGroupMember(gid);
+        // autorem jsem já; správce smí založit i cizí (převod receptů ze staré kuchařky)
+        allow create: if isGroupMember(gid)
+          && (request.resource.data.authorUid == request.auth.uid || groupData(gid).ownerUid == request.auth.uid);
+        // upravit celý recept smí autor; ostatní členové jen hodnocení, kategorie, jméno autora
+        // a sdílení odkazem (správa kategorií a přejmenování profilu se propisuje do všech receptů)
+        allow update: if isGroupMember(gid) && (
+          resource.data.get('authorUid', request.auth.uid) == request.auth.uid
+          || changed().hasOnly(['reviews', 'categories', 'category', 'author', 'shared']));
+        // smazat smí autor, a správce při mazání celé skupiny
+        allow delete: if isGroupMember(gid) && (
+          resource.data.get('authorUid', request.auth.uid) == request.auth.uid
+          || groupData(gid).ownerUid == request.auth.uid);
+      }
+
+      match /meta/{docId} {
+        allow read, write: if isGroupMember(gid);
+      }
+    }
+
+    // ---------- Kódy skupin ----------
+    // jen přímý dotaz na konkrétní kód (výpis všech kódů zakázaný)
+    match /joinCodes/{code} {
+      allow get: if verified();
+      allow create: if verified()
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.gid)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.gid)).data.code == code;
+      allow delete: if verified() && groupData(resource.data.gid).ownerUid == request.auth.uid;
+    }
+
+    // ---------- Osobní nákupní seznam ----------
+    match /shoppingLists/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- Původní společná kuchařka (před skupinami) ----------
+    // Zůstává pro převod do skupiny a pro staré sdílené odkazy. Až bude převod
+    // ověřený, může se tahle část smazat.
+    function legacyMember() {
+      return verified()
+        && request.auth.token.email in get(/databases/$(database)/documents/meta/allowedEmails).data.list;
+    }
+    match /recipes/{id} {
+      allow get: if resource.data.shared == true || legacyMember();
+      allow list, write: if legacyMember();
+    }
+    match /meta/{docId} {
+      allow read, write: if legacyMember();
+    }
+  }
+}

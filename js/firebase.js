@@ -1,8 +1,8 @@
-// Firebase — stejný projekt a struktura dat jako původní verze kuchařky,
-// obě verze tedy pracují nad toutéž sbírkou receptů.
+// Firebase — konfigurace a jediné místo, odkud zbytek appky bere funkce SDK.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage, ref, uploadString, getDownloadURL, deleteObject
@@ -29,7 +29,8 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
 export {
-  collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where,
   ref, uploadString, getDownloadURL, deleteObject,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, sendEmailVerification, updateProfile,

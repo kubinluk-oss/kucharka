@@ -1,8 +1,7 @@
 // Přihlašovací brána (Firebase Auth): vykresluje #auth-gate a stará se o
-// přihlášení/registraci/reset hesla. Správa "kdo má přístup" (allowlist) je
-// tu jako čisté Firestore CRUD funkce, volané ze stránky Nastavení v app.js.
+// přihlášení/registraci/reset hesla. Kdo co vidí, určují skupiny (viz app.js).
 import {
-  auth, db, doc, getDoc, setDoc, arrayUnion, arrayRemove,
+  auth,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, sendEmailVerification, updateProfile,
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
@@ -147,7 +146,6 @@ export function showAuthGate(mode = 'signin', { onGuest = null } = {}) {
   guestCallback = onGuest;
   if (mode === 'signin' || mode === 'signup' || mode === 'reset') renderForm(mode);
   else if (mode === 'verify-email') renderVerify();
-  else if (mode === 'pending-access') renderPending();
   else if (mode === 'need-name') renderNeedName();
 }
 
@@ -309,48 +307,6 @@ function renderNeedName() {
   gate.querySelector('#auth-signout').addEventListener('click', () => signOut(auth));
 }
 
-/* Žádost o přístup. Nečlen do databáze jinak nesmí — pravidla mu povolují zapsat
-   JEDINÝ dokument: `accessRequests/<jeho uid>`, a to jen s vlastním e-mailem.
-   Cizí adresu tam tedy podstrčit nemůže. Členům se pak žádost objeví v Nastavení. */
-async function sendAccessRequest() {
-  const u = auth.currentUser;
-  if (!u) return false;
-  try {
-    await setDoc(doc(db, 'accessRequests', u.uid), {
-      email: u.email || '',
-      name: u.displayName || '',
-      createdAt: Date.now(),
-    });
-    return true;
-  } catch (e) {
-    console.error('access request:', e);
-    return false;
-  }
-}
-
-function renderPending() {
-  const email = auth.currentUser?.email || '';
-  gate.innerHTML = `
-    <div class="auth-wrap">
-      <div class="auth-card">
-        <div class="auth-brand">Kuchařka<span>.</span></div>
-        <h2 class="auth-title">Čekáš na schválení</h2>
-        <p class="auth-lead">Jsi přihlášený/á jako <b>${escapeHtml(email)}</b>. Poslali jsme ostatním žádost o přístup — až ji někdo potvrdí, klepni na Zkusit znovu.</p>
-        <p class="auth-lead" id="auth-req-state" style="margin-top:-12px"></p>
-        <button class="btn btn-primary btn-block" id="auth-retry">Zkusit znovu</button>
-        <button class="link-btn auth-switch" id="auth-signout">Odhlásit se</button>
-      </div>
-    </div>`;
-  gate.querySelector('#auth-retry').addEventListener('click', () => location.reload());
-  gate.querySelector('#auth-signout').addEventListener('click', () => signOut(auth));
-  const state = gate.querySelector('#auth-req-state');
-  sendAccessRequest().then(ok => {
-    state.textContent = ok
-      ? 'Žádost odeslána.'
-      : 'Žádost se nepodařilo odeslat — dej vědět někomu, kdo už v kuchařce je, ať tě přidá ručně.';
-  });
-}
-
 export function signOutUser() {
   return signOut(auth);
 }
@@ -371,23 +327,4 @@ export async function changePassword(currentPassword, newPassword) {
   const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
   await reauthenticateWithCredential(auth.currentUser, cred);
   await updatePassword(auth.currentUser, newPassword);
-}
-
-/* ---------- Allowlist (meta/allowedEmails) ---------- */
-async function getAllowedEmails() {
-  const d = await getDoc(doc(db, 'meta', 'allowedEmails'));
-  return (d.exists() && d.data().list) ? d.data().list : [];
-}
-
-// arrayUnion/arrayRemove místo přečti-uprav-zapiš: když dva členové zvou (nebo
-// schvalují žádost) současně, jinak by jeden zápis přepsal ten druhý.
-export async function addAllowedEmail(email) {
-  const e = email.trim().toLowerCase();
-  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: arrayUnion(e) }, { merge: true });
-  return getAllowedEmails();
-}
-
-export async function removeAllowedEmail(email) {
-  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: arrayRemove(email) }, { merge: true });
-  return getAllowedEmails();
 }
