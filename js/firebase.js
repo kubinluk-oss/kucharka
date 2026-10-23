@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  arrayUnion, arrayRemove, deleteField, FieldPath, query, where
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage, ref, uploadString, getDownloadURL, deleteObject
@@ -30,7 +30,7 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  arrayUnion, arrayRemove, deleteField, FieldPath, query, where,
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where, runTransaction,
   ref, uploadString, getDownloadURL, deleteObject,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, sendEmailVerification, updateProfile,

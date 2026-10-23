@@ -1402,6 +1402,15 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 .share-h{font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text-2);margin:0 0 6px 2px}
 .share-note{font-size:13px;margin:0 0 12px}
 .share-targets{margin-bottom:22px;box-shadow:none;background:var(--bg-elev2)}
+/* nákup: přepínač osobní/společné seznamy a výběr lidí */
+.shop-lists{margin:-4px 0 14px}
+.shop-lists[hidden]{display:none}
+.shop-lists .fchip{display:inline-flex;align-items:center;gap:6px;position:relative}
+.shop-lists .fchip svg{width:16px;height:16px;flex-shrink:0}
+.shop-new-dot{width:7px;height:7px;border-radius:50%;background:var(--danger);display:inline-block;margin-left:2px}
+.shop-pick{margin-bottom:14px;background:var(--bg-elev2);box-shadow:none}
+.shop-pick-row{cursor:pointer}
+.shop-pick-row input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0;margin:0}
 .empty-join{margin-top:18px;font-size:14px;color:var(--text-2)}
 .empty-join .link-btn{font-size:14px;font-weight:700;color:var(--accent)}
 .settings-hint{font-size:12.5px;color:var(--text-2);margin:8px 4px 0;line-height:1.45}

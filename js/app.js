@@ -1,7 +1,7 @@
 // Hlavní logika aplikace: stav, synchronizace s Firebase, router a vykreslování stránek.
 import {
   db, storage, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  arrayUnion, arrayRemove, deleteField, FieldPath, query, where,
+  arrayUnion, arrayRemove, deleteField, FieldPath, query, where, runTransaction,
   ref, uploadString, getDownloadURL, deleteObject
 } from './firebase.js';
 import {
@@ -57,7 +57,10 @@ const state = {
   timeFilter: 'all',        // 'all' | '30' | '60' | '120' | '120+'
   searchQuery: '',
   searchMode: 'name',       // 'name' | 'ingredients'
-  shopping: [],             // [{ id, text, cat, done }]
+  shopping: [],             // [{ id, text, cat, done }] — položky PRÁVĚ ZOBRAZENÉHO seznamu
+  myShopping: [],           // můj osobní seznam
+  sharedLists: [],          // společné seznamy, ve kterých jsem [{ id, ownerUid, members, memberNames, items }]
+  shopList: 'mine',         // který seznam je zobrazený: 'mine' nebo id společného
   shoppingSort: 'store',    // 'store' (podle obchodu) | 'added' (v pořadí přidání)
   highScores: {},           // { jméno: nejvyšší skóre } — žebříček minihry (stranou, jako catStyles)
 };
@@ -487,13 +490,23 @@ function saveHighScore(name, score) {
   return true;
 }
 
-/* ================= Nákupní seznam: data ================= */
-// Osobní seznam. Přihlášený: Firestore shoppingLists/{uid}. Demo/host: jen localStorage.
+/* ================= Nákupní seznam: data =================
+   Každý má svůj OSOBNÍ seznam (shoppingLists/{uid}; v demu a u hosta jen localStorage).
+   Navíc může být ve SPOLEČNÝCH seznamech (sharedLists/{id}): založí ho ten, kdo svůj
+   seznam nasdílí lidem ze svých skupin, a jen on do něj přidává další lidi a může ho
+   celý zrušit. Ostatní z něj můžou jen odejít. Změny se všem propisují živě.
+
+   `state.shopping` jsou vždy položky PRÁVĚ ZOBRAZENÉHO seznamu — všechna místa, která
+   seznam mění (přidat, odškrtnout, smazat, přetáhnout…), pracují jen s ním a pak volají
+   saveShopping(), které změnu uloží tam, kam patří. */
 const SHOPPING_LOCAL_KEY = 'kucharka-shopping-local';
+const shopListKey = () => 'kucharka-shoplist-' + currentUid();
 
 function loadShoppingLocal() {
-  try { state.shopping = JSON.parse(localStorage.getItem(SHOPPING_LOCAL_KEY) || '[]'); }
-  catch { state.shopping = []; }
+  try { state.myShopping = JSON.parse(localStorage.getItem(SHOPPING_LOCAL_KEY) || '[]'); }
+  catch { state.myShopping = []; }
+  state.shopList = 'mine';
+  state.shopping = state.myShopping;
 }
 
 function shoppingIsLocal() { return DEMO || !currentUid(); }
@@ -504,12 +517,22 @@ function saveShopping() {
      z receptu (jsem na jiné stránce) ukázal na Nákupu ještě starý seznam. Týká se
      to i místního ukládání v demu a u hosta, kam žádná data z cloudu nedorazí. */
   pageCache.delete('shopping');
+  if (state.shopList !== 'mine') return saveSharedList(state.shopList, state.shopping);
+  state.myShopping = state.shopping;
   if (shoppingIsLocal()) {
     try { localStorage.setItem(SHOPPING_LOCAL_KEY, JSON.stringify(state.shopping)); } catch { /* plná kvóta */ }
     return Promise.resolve();
   }
   return setDoc(doc(db, 'shoppingLists', currentUid()), { items: state.shopping })
     .catch(e => { console.error('save shopping:', e); toast('Nákupní seznam se nepodařilo uložit'); });
+}
+
+// Zobrazený seznam se změnil zvenku (cloud) -> přepsat jen tělo, ne celou stránku
+// (pole pro psaní zůstane, klávesnice nezaklapne).
+function showShoppingItems(items) {
+  state.shopping = items;
+  pageCache.delete('shopping');
+  if (currentRoute?.page === 'shopping') { renderShoppingBody(); updateShopHead(); }
 }
 
 function subscribeShopping() {
@@ -522,11 +545,122 @@ function subscribeShopping() {
        (druhé zařízení) a i ty jen v seznamu, ne celou stránku. */
     if (d.metadata.hasPendingWrites) return;
     const items = (d.exists() && Array.isArray(d.data().items)) ? d.data().items : [];
-    if (JSON.stringify(items) === JSON.stringify(state.shopping)) return;   // jen potvrzení našeho zápisu
-    state.shopping = items;
-    pageCache.delete('shopping');   // schovaná kopie je po změně seznamu neplatná
-    if (currentRoute?.page === 'shopping') { renderShoppingBody(); updateShopHead(); }
+    if (JSON.stringify(items) === JSON.stringify(state.myShopping)) return;   // jen potvrzení našeho zápisu
+    state.myShopping = items;
+    if (state.shopList === 'mine') showShoppingItems(items);
   }, err => console.error('shopping sync:', err));
+
+  try { state.shopList = localStorage.getItem(shopListKey()) || 'mine'; } catch { state.shopList = 'mine'; }
+  listen(query(collection(db, 'sharedLists'), where('members', 'array-contains', uidNow)), snap => {
+    state.sharedLists = snap.docs.map(d => ({ ...d.data(), id: d.id }))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    snap.docs.forEach(d => { sharedBase[d.id] = d.data().items || []; });
+    const cur = state.sharedLists.find(l => l.id === state.shopList);
+    if (state.shopList !== 'mine' && !cur) {
+      // seznam někdo zrušil, nebo mě z něj odebral
+      if (!snap.metadata.fromCache) toast('Společný seznam už není k dispozici');
+      selectShopList('mine');
+      return;
+    }
+    if (cur && !snap.metadata.hasPendingWrites
+        && JSON.stringify(cur.items || []) !== JSON.stringify(state.shopping)) {
+      showShoppingItems(cur.items || []);
+    }
+    pageCache.delete('shopping');
+    if (currentRoute?.page === 'shopping') { renderShopLists(); updateShopHead(); }
+  }, err => console.error('shared lists sync:', err));
+}
+
+// Přepne zobrazený seznam (osobní / společný).
+function selectShopList(id) {
+  state.shopList = id;
+  try { localStorage.setItem(shopListKey(), id); } catch { /* soukromý režim */ }
+  if (id !== 'mine') markShopListSeen(id);
+  const list = state.sharedLists.find(l => l.id === id);
+  state.shopping = id === 'mine' ? state.myShopping : (list?.items || []);
+  pageCache.delete('shopping');
+  if (currentRoute?.page === 'shopping') { renderShopLists(); renderShoppingBody(); updateShopHead(); }
+}
+
+/* Uložení do společného seznamu. Může ho současně upravovat víc lidí (jeden odškrtává,
+   druhý přidává), takže nepřepisujeme celé pole — z rozdílu proti poslední verzi
+   z cloudu vyčteme, co jsem změnil JÁ, a v transakci to přiložíme na aktuální stav. */
+const sharedBase = {};   // id seznamu -> položky podle posledního snímku z cloudu
+async function saveSharedList(lid, local) {
+  const base = sharedBase[lid] || [];
+  const baseById = new Map(base.map(i => [i.id, JSON.stringify(i)]));
+  const localIds = new Set(local.map(i => i.id));
+  const removed = new Set(base.filter(i => !localIds.has(i.id)).map(i => i.id));
+  const upserts = local.filter(i => baseById.get(i.id) !== JSON.stringify(i));
+  const order = local.map(i => i.id);
+  sharedBase[lid] = local.map(i => ({ ...i }));
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'sharedLists', lid);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return;
+      const server = (snap.data().items || []).filter(i => !removed.has(i.id));
+      const byId = new Map(server.map(i => [i.id, i]));
+      upserts.forEach(i => byId.set(i.id, i));
+      // pořadí: položky, které znám, v mém pořadí; cizí nové přidané mezitím na konec
+      const out = order.filter(id => byId.has(id)).map(id => byId.get(id));
+      server.forEach(i => { if (!localIds.has(i.id)) out.push(byId.get(i.id)); });
+      tx.update(ref, { items: out, updatedAt: Date.now() });
+    });
+  } catch (e) {
+    console.error('save shared list:', e);
+    toast('Společný seznam se nepodařilo uložit');
+  }
+}
+
+// Lidé, se kterými můžu sdílet: členové všech mých skupin kromě mě.
+function shareablePeople() {
+  const me = currentUid();
+  const people = new Map();
+  state.groups.forEach(g => (g.members || []).forEach(u => {
+    if (u !== me && !people.has(u)) people.set(u, (g.memberNames || {})[u] || 'Člen');
+  }));
+  return [...people].map(([uid, name]) => ({ uid, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+}
+
+// Z mého osobního seznamu udělá společný: položky se do něj PŘESUNOU.
+async function createSharedList(people) {
+  const me = currentUid();
+  const names = { [me]: myName() };
+  people.forEach(p => { names[p.uid] = p.name; });
+  const ref = doc(collection(db, 'sharedLists'));
+  await setDoc(ref, {
+    ownerUid: me, members: [me, ...people.map(p => p.uid)], memberNames: names,
+    items: state.myShopping, createdAt: Date.now(),
+  });
+  sharedBase[ref.id] = state.myShopping.map(i => ({ ...i }));
+  state.sharedLists = [...state.sharedLists, { id: ref.id, ownerUid: me, members: [me, ...people.map(p => p.uid)], memberNames: names, items: state.myShopping }];
+  state.myShopping = [];
+  await setDoc(doc(db, 'shoppingLists', me), { items: [] }).catch(e => console.error(e));
+  selectShopList(ref.id);
+}
+
+async function addSharedListPeople(list, people) {
+  const upd = { members: arrayUnion(...people.map(p => p.uid)) };
+  people.forEach(p => { upd[`memberNames.${p.uid}`] = p.name; });
+  await updateDoc(doc(db, 'sharedLists', list.id), upd);
+}
+async function removeSharedListPerson(list, uid) {
+  await updateDoc(doc(db, 'sharedLists', list.id), { members: arrayRemove(uid), [`memberNames.${uid}`]: deleteField() });
+}
+async function deleteSharedList(list) {
+  await deleteDoc(doc(db, 'sharedLists', list.id));
+}
+
+// Které společné seznamy jsem už otevřel (nový nasdílený seznam má u sebe tečku).
+function seenShopLists() {
+  try { return JSON.parse(localStorage.getItem('kucharka-shoplists-seen') || '[]'); } catch { return []; }
+}
+function markShopListSeen(id) {
+  const seen = seenShopLists();
+  if (seen.includes(id)) return;
+  try { localStorage.setItem('kucharka-shoplists-seen', JSON.stringify([...seen, id].slice(-50))); } catch { /* plná kvóta */ }
 }
 
 // Přidání volné položky (uživatel si napíše, co chce).
@@ -1978,6 +2112,7 @@ function openRecipeActions(anchorEl, r, mult, portions) {
 }
 
 /* ================= Nákupní seznam (stránka) ================= */
+const peopleSvg = `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="9" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.2 19.5c.6-3.2 3-5 5.8-5s5.2 1.8 5.8 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16.6" cy="9.3" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16.2 14.3c2.5 0 4.3 1.6 4.8 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 const bagSvg = `<svg viewBox="0 0 24 24" width="46" height="46"><path d="M7 8V6.5a5 5 0 0 1 10 0V8m-13 0h16l-1 12.2a1.8 1.8 0 0 1-1.8 1.8H6.8A1.8 1.8 0 0 1 5 20.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 
 function renderShoppingPage() {
@@ -1985,6 +2120,7 @@ function renderShoppingPage() {
   <div class="page-narrow">
     <div class="page-topbar">
       <span class="spacer"></span>
+      ${shoppingIsLocal() ? '' : `<button class="circle-btn" id="shop-people" aria-label="Sdílet seznam">${peopleSvg}</button>`}
       <button class="circle-btn" id="shop-filter" aria-label="Řazení a možnosti" hidden>${filterSvg}</button>
     </div>
     <div class="page-head">
@@ -1993,6 +2129,7 @@ function renderShoppingPage() {
         <div class="page-sub"></div>
       </div>
     </div>
+    <div class="chip-row shop-lists" id="shop-lists" hidden></div>
 
     <form class="shop-add" id="shop-add-form">
       <input class="shop-add-input" id="shop-add-input" placeholder="Přidat položku…" autocomplete="off" enterkeyhint="done">
@@ -2028,9 +2165,138 @@ function renderShoppingPage() {
   });
 
   view.querySelector('#shop-filter').addEventListener('click', openShoppingOptions);
+  view.querySelector('#shop-people')?.addEventListener('click', () =>
+    state.shopList === 'mine' ? openShareShoppingSheet() : openSharedListSheet());
+  view.querySelector('#shop-lists').addEventListener('click', e => {
+    const b = e.target.closest('[data-shop-list]');
+    if (b && b.dataset.shopList !== state.shopList) selectShopList(b.dataset.shopList);
+  });
 
+  renderShopLists();
   renderShoppingBody();
   updateShopHead();
+}
+
+// Jmenovka společného seznamu: ostatní lidé v něm (bez mě).
+function sharedListLabel(l) {
+  const me = currentUid();
+  const names = (l.members || []).filter(u => u !== me).map(u => (l.memberNames || {})[u] || 'Člen');
+  return names.length ? names.join(', ') : 'jen ty';
+}
+
+// Přepínač seznamů — ukáže se, jen když jsem v nějakém společném.
+function renderShopLists() {
+  const box = view.querySelector('#shop-lists');
+  if (!box) return;
+  const lists = shoppingIsLocal() ? [] : state.sharedLists;
+  box.hidden = !lists.length;
+  const seen = seenShopLists();
+  box.innerHTML = lists.length ? `
+    <button class="fchip ${state.shopList === 'mine' ? 'active' : ''}" data-shop-list="mine">Můj seznam</button>
+    ${lists.map(l => `
+      <button class="fchip ${state.shopList === l.id ? 'active' : ''}" data-shop-list="${escapeHtml(l.id)}">
+        ${peopleSvg}<span>${escapeHtml(sharedListLabel(l))}</span>${seen.includes(l.id) || l.ownerUid === currentUid() ? '' : '<i class="shop-new-dot"></i>'}
+      </button>`).join('')}` : '';
+  const btn = view.querySelector('#shop-people');
+  if (btn) btn.setAttribute('aria-label', state.shopList === 'mine' ? 'Sdílet seznam' : 'Lidé ve společném seznamu');
+}
+
+// Výběr lidí (zaškrtávací seznam) — pro založení společného seznamu i přidání lidí.
+function peoplePickerHtml(people) {
+  return `<div class="settings-card shop-pick">
+    ${people.map(p => `
+      <label class="settings-row shop-pick-row">
+        <input type="checkbox" value="${escapeHtml(p.uid)}">
+        ${personAvatarHtml(p.name)}<span class="row-label">${escapeHtml(p.name)}</span>
+      </label>`).join('')}
+  </div>`;
+}
+function pickedPeople(root, people) {
+  const ids = [...root.querySelectorAll('.shop-pick input:checked')].map(i => i.value);
+  return people.filter(p => ids.includes(p.uid));
+}
+
+// Z osobního seznamu udělat společný.
+function openShareShoppingSheet() {
+  const people = shareablePeople();
+  const sheet = openSheet({
+    title: 'Sdílet seznam',
+    bodyHtml: people.length ? `
+      <p class="muted share-note">Vyber, s kým chceš nakupovat. Vznikne společný seznam, který všichni uvidí a budou ho upravovat. Položky z tvého seznamu se do něj přesunou.</p>
+      ${peoplePickerHtml(people)}
+      <button class="btn btn-primary btn-block" id="ss-create" disabled>Vytvořit společný seznam</button>` : `
+      <p class="muted share-note">Sdílet můžeš s lidmi, se kterými jsi v nějaké skupině. Skupinu založíš nebo se k ní připojíš v Nastavení.</p>`,
+  });
+  const create = sheet.body.querySelector('#ss-create');
+  if (!create) return;
+  sheet.body.addEventListener('change', () => { create.disabled = !pickedPeople(sheet.body, people).length; });
+  create.addEventListener('click', async () => {
+    const picked = pickedPeople(sheet.body, people);
+    if (!picked.length) return;
+    showLoader('Sdílím…');
+    try { await createSharedList(picked); hideLoader(); sheet.close(); toast('Společný seznam je hotový'); }
+    catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Seznam se nepodařilo nasdílet.'); }
+  });
+}
+
+// Správa společného seznamu: kdo v něm je; zakladatel přidává/odebírá lidi a ruší seznam.
+function openSharedListSheet() {
+  const me = currentUid();
+  const sheet = openSheet({ title: 'Společný seznam', bodyHtml: '' });
+  async function run(label, fn, okMsg) {
+    showLoader(label);
+    try { await fn(); hideLoader(); if (okMsg) toast(okMsg); return true; }
+    catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Zkontroluj připojení a zkus to znovu.'); return false; }
+  }
+  function draw() {
+    const l = state.sharedLists.find(x => x.id === state.shopList);
+    if (!l) { sheet.close(); return; }
+    const owner = l.ownerUid === me;
+    const names = l.memberNames || {};
+    const addable = owner ? shareablePeople().filter(p => !(l.members || []).includes(p.uid)) : [];
+    sheet.body.innerHTML = `
+      <div class="grp-members">
+        ${(l.members || []).map(u => `
+          <div class="grp-member">
+            ${personAvatarHtml(names[u] || '?')}
+            <span class="grp-mname">${escapeHtml(names[u] || 'Člen')}${u === me ? ' (ty)' : ''}</span>
+            ${u === l.ownerUid ? '<span class="grp-badge">založil/a</span>' : ''}
+            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze seznamu">✕</button>` : ''}
+          </div>`).join('')}
+      </div>
+      ${addable.length ? `
+        <h3 class="share-h">Přidat další</h3>
+        ${peoplePickerHtml(addable)}
+        <button class="btn btn-block" id="sl-add" disabled style="margin-bottom:18px">Přidat do seznamu</button>` : ''}
+      <div class="grp-actions">
+        ${owner
+          ? '<button class="btn btn-block btn-danger" id="sl-delete">Zrušit seznam pro všechny</button>'
+          : '<button class="btn btn-block btn-danger" id="sl-leave">Odejít ze seznamu</button>'}
+      </div>`;
+
+    const add = sheet.body.querySelector('#sl-add');
+    if (add) {
+      sheet.body.querySelector('.shop-pick').addEventListener('change', () => { add.disabled = !pickedPeople(sheet.body, addable).length; });
+      add.addEventListener('click', async () => {
+        const picked = pickedPeople(sheet.body, addable);
+        if (picked.length && await run('Přidávám…', () => addSharedListPeople(l, picked), 'Přidáno')) setTimeout(draw, 300);
+      });
+    }
+    sheet.body.querySelectorAll('[data-kick]').forEach(b => b.addEventListener('click', async () => {
+      const who = names[b.dataset.kick] || 'člen';
+      if (!await confirmDialog('Odebrat ze seznamu?', `${who} přestane společný seznam vidět.`, { okLabel: 'Odebrat', danger: true })) return;
+      if (await run('Odebírám…', () => removeSharedListPerson(l, b.dataset.kick))) setTimeout(draw, 300);
+    }));
+    sheet.body.querySelector('#sl-delete')?.addEventListener('click', async () => {
+      if (!await confirmDialog('Zrušit společný seznam?', 'Seznam se smaže všem, kdo v něm jsou. Nejde to vrátit.', { okLabel: 'Zrušit seznam', danger: true })) return;
+      if (await run('Ruším…', () => deleteSharedList(l), 'Seznam zrušen')) { sheet.close(); selectShopList('mine'); }
+    });
+    sheet.body.querySelector('#sl-leave')?.addEventListener('click', async () => {
+      if (!await confirmDialog('Odejít ze seznamu?', 'Společný seznam přestaneš vidět. Ostatním zůstane.', { okLabel: 'Odejít', danger: true })) return;
+      if (await run('Odcházím…', () => removeSharedListPerson(l, me), 'Odešel jsi ze seznamu')) { sheet.close(); selectShopList('mine'); }
+    });
+  }
+  draw();
 }
 
 function updateShopHead() {
@@ -4129,7 +4395,10 @@ if (DEMO) {
       return;
     }
     // odhlášení: odběry i schované stránky patřily předchozímu účtu
-    if (live) { live = false; unsubscribeAll(); pageCache.clear(); state.groups = []; state.activeGroup = null; }
+    if (live) {
+      live = false; unsubscribeAll(); pageCache.clear();
+      Object.assign(state, { groups: [], activeGroup: null, sharedLists: [], myShopping: [], shopping: [], shopList: 'mine' });
+    }
     renderProfileButtons();
     if (publicMode || guestDemoFallback) return;
     if (!started && shareId && await tryPublicRecipe(shareId)) return;
