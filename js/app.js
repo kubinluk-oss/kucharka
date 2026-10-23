@@ -1336,7 +1336,10 @@ function renderHome() {
         <h3>Kuchařka je zatím prázdná</h3>
         <p>Přidej první recept a začni sbírku.</p>
         <a class="btn btn-primary" href="#/novy">Přidat recept</a>
+        ${canJoinGroups() ? `
+        <p class="empty-join">Máš kód skupiny? <button class="link-btn" id="home-join">Připojit se ke skupině</button></p>` : ''}
       </div>`;
+    view.querySelector('#home-join')?.addEventListener('click', promptJoinGroup);
     wireViewAvatarButtons(); renderProfileButtons();
     return;
   }
@@ -3292,18 +3295,7 @@ function renderSettingsPage() {
       toast('Skupina vytvořena — pošli ostatním její kód');
     } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Skupinu se nepodařilo vytvořit.'); }
   });
-  view.querySelector('#grp-join')?.addEventListener('click', async () => {
-    const code = await promptDialog('Připojit se ke skupině', 'Zadej 6místný kód, který ti poslal někdo ze skupiny.', { placeholder: 'např. K7P4QX', okLabel: 'Připojit' });
-    if (!code) return;
-    showLoader('Připojuju…');
-    try {
-      const gid = await joinGroup(code);
-      hideLoader();
-      if (!gid) { alertDialog('Kód nesedí', 'Skupinu s tímhle kódem jsme nenašli. Zkontroluj ho, nebo si řekni o nový.'); return; }
-      switchGroup(gid);
-      toast('Jsi ve skupině');
-    } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Ke skupině se nepodařilo připojit.'); }
-  });
+  view.querySelector('#grp-join')?.addEventListener('click', promptJoinGroup);
 
   view.querySelector('#set-login')?.addEventListener('click', exitGuestMode);
 
@@ -3345,6 +3337,22 @@ function openChangePassword() {
 
 // Změna jména — promítne se do všech receptů a hodnocení (renameProfileEverywhere).
 // V demu není přihlášený uživatel, takže se přeskočí changeDisplayName (jen lokální).
+// Ke skupinám se dá připojit jen se skutečným účtem (ne v demu / jako host).
+const canJoinGroups = () => !DEMO && !guestDemoFallback && !!currentUid();
+
+async function promptJoinGroup() {
+  const code = await promptDialog('Připojit se ke skupině', 'Zadej 6místný kód, který ti poslal někdo ze skupiny.', { placeholder: 'např. K7P4QX', okLabel: 'Připojit' });
+  if (!code) return;
+  showLoader('Připojuju…');
+  try {
+    const gid = await joinGroup(code);
+    hideLoader();
+    if (!gid) { alertDialog('Kód nesedí', 'Skupinu s tímhle kódem jsme nenašli. Zkontroluj ho, nebo si řekni o nový.'); return; }
+    switchGroup(gid);
+    toast('Jsi ve skupině');
+  } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Ke skupině se nepodařilo připojit.'); }
+}
+
 function memberCountText(n) {
   return n === 1 ? '1 člen' : n >= 2 && n <= 4 ? `${n} členové` : `${n} členů`;
 }
