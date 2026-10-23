@@ -2,7 +2,7 @@
 // přihlášení/registraci/reset hesla. Správa "kdo má přístup" (allowlist) je
 // tu jako čisté Firestore CRUD funkce, volané ze stránky Nastavení v app.js.
 import {
-  auth, db, doc, getDoc, setDoc,
+  auth, db, doc, getDoc, setDoc, arrayUnion, arrayRemove,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, sendEmailVerification, updateProfile,
   reauthenticateWithCredential, EmailAuthProvider, updatePassword,
@@ -347,7 +347,7 @@ function renderPending() {
   sendAccessRequest().then(ok => {
     state.textContent = ok
       ? 'Žádost odeslána.'
-      : 'Žádost se nepodařilo odeslat — dej vědět někomu z party, ať tě přidá ručně.';
+      : 'Žádost se nepodařilo odeslat — dej vědět někomu, kdo už v kuchařce je, ať tě přidá ručně.';
   });
 }
 
@@ -379,18 +379,15 @@ async function getAllowedEmails() {
   return (d.exists() && d.data().list) ? d.data().list : [];
 }
 
+// arrayUnion/arrayRemove místo přečti-uprav-zapiš: když dva členové zvou (nebo
+// schvalují žádost) současně, jinak by jeden zápis přepsal ten druhý.
 export async function addAllowedEmail(email) {
   const e = email.trim().toLowerCase();
-  const list = await getAllowedEmails();
-  if (list.includes(e)) return list;
-  const next = [...list, e];
-  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: next });
-  return next;
+  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: arrayUnion(e) }, { merge: true });
+  return getAllowedEmails();
 }
 
 export async function removeAllowedEmail(email) {
-  const list = await getAllowedEmails();
-  const next = list.filter(e => e !== email);
-  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: next });
-  return next;
+  await setDoc(doc(db, 'meta', 'allowedEmails'), { list: arrayRemove(email) }, { merge: true });
+  return getAllowedEmails();
 }

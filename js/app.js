@@ -65,6 +65,7 @@ const state = {
 };
 
 let profilesAutoCreated = false;
+let profilesLoaded = false;   // dorazil už dokument meta/profiles? (viz autoCreateProfiles)
 
 /* ================= Vzhled (světlý/tmavý/systém) ================= */
 const mqDark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -154,20 +155,33 @@ function loadDemoData() {
   onDataChanged();
 }
 
+/* Odběry z cloudu si pamatujeme, aby šly zrušit. Jinak by po odhlášení (nebo po
+   přechodu host → přihlášený) dál visely na starém účtu: nákupní seznam by četl
+   cizí dokument, odběry by se zdvojily a zamítnuté čtení po odhlášení by místo
+   přihlášení ukázalo „Čekáš na schválení". */
+let unsubs = [];
+function listen(target, onNext, onErr) { unsubs.push(onSnapshot(target, onNext, onErr)); }
+function unsubscribeAll() { unsubs.forEach(u => u()); unsubs = []; }
+
 function subscribe() {
+  unsubscribeAll();
+  profilesAutoCreated = false;
+  profilesLoaded = false;
   if (DEMO) { loadDemoData(); return; }
 
-  onSnapshot(doc(db, 'meta', 'categories'), d => {
+  listen(doc(db, 'meta', 'categories'), d => {
     state.categories = (d.exists() && d.data().list) ? d.data().list : [...DEFAULT_CATS];
     onDataChanged();
   }, err => console.error('categories sync:', err));
 
-  onSnapshot(doc(db, 'meta', 'profiles'), d => {
+  listen(doc(db, 'meta', 'profiles'), d => {
     state.profiles = (d.exists() && d.data().list) ? d.data().list : [];
+    profilesLoaded = true;
+    autoCreateProfiles();
   }, err => console.error('profiles sync:', err));
 
   if (!guestMode) {
-    onSnapshot(doc(db, 'meta', 'allowedEmails'), d => {
+    listen(doc(db, 'meta', 'allowedEmails'), d => {
       state.allowedEmails = (d.exists() && d.data().list) ? d.data().list : [];
       if (currentRoute?.page === 'settings') renderSettingsPage();
     }, err => console.error('allowedEmails sync:', err));
@@ -177,21 +191,21 @@ function subscribe() {
   }
 
   // vzhled kategorií (barva + emoji) — samostatný dokument, aby ho stará verze nepřepsala
-  onSnapshot(doc(db, 'meta', 'catStyles'), d => {
+  listen(doc(db, 'meta', 'catStyles'), d => {
     state.catStyles = (d.exists() && d.data().map) ? d.data().map : {};
     onDataChanged();
   }, err => console.error('catStyles sync:', err));
 
   // profilové fotky (jméno -> url), sdílené přes cloud — aby je viděli i ostatní
   // u svých hodnocení. Vlastní fotku máme i lokálně (instant/offline), viz photoFor.
-  onSnapshot(doc(db, 'meta', 'avatarPhotos'), d => {
+  listen(doc(db, 'meta', 'avatarPhotos'), d => {
     state.avatarPhotos = (d.exists() && d.data().map) ? d.data().map : {};
     renderProfileButtons();
     onDataChanged();
   }, err => console.error('avatarPhotos sync:', err));
 
   // žádosti o přístup — kdo se přihlásil, ale ještě není na seznamu pozvaných
-  onSnapshot(collection(db, 'accessRequests'), snap => {
+  listen(collection(db, 'accessRequests'), snap => {
     state.accessRequests = [];
     snap.forEach(d => state.accessRequests.push({ ...d.data(), uid: d.id }));
     // ukazují se jen v Nastavení (to se do paměti stránek neukládá) — jinde nic nepřekreslovat
@@ -199,12 +213,12 @@ function subscribe() {
   }, err => console.error('accessRequests sync:', err));
 
   // žebříček minihry (jméno -> nejvyšší skóre), sdílený přes cloud
-  onSnapshot(doc(db, 'meta', 'highScores'), d => {
+  listen(doc(db, 'meta', 'highScores'), d => {
     // čte ho jen hra, a ta si žebříček sestaví sama při vykreslení / konci kola
     state.highScores = (d.exists() && d.data().map) ? d.data().map : {};
   }, err => console.error('highScores sync:', err));
 
-  onSnapshot(collection(db, 'recipes'), snap => {
+  listen(collection(db, 'recipes'), snap => {
     state.recipes = [];
     snap.forEach(d => state.recipes.push({ ...d.data(), id: d.id }));
     state.loaded = true;
@@ -216,6 +230,7 @@ function subscribe() {
       if (guestMode) {
         // Host nemá do kuchařky přístup (pravidla pouštějí jen pozvané) -> místo
         // prázdné/zamčené obrazovky mu pustíme ukázková data, ať appku vidí v chodu.
+        unsubscribeAll();   // ať zbylé odběry nepřepíšou ukázková data skutečnými
         guestMode = false;
         guestDemoFallback = true;
         DEMO = true;
@@ -235,8 +250,10 @@ function subscribe() {
 }
 
 // Jméno přihlášeného uživatele bez profilu -> profil se doplní automaticky (jen jednou po načtení).
+// Čeká na OBA dokumenty: kdyby recepty dorazily dřív než profily, zapsal by se seznam
+// sestavený z prázdna a profily bez receptů (jen hodnotící) by z cloudu zmizely.
 function autoCreateProfiles() {
-  if (profilesAutoCreated || guestMode) return;
+  if (profilesAutoCreated || guestMode || !profilesLoaded || !state.loaded) return;
   profilesAutoCreated = true;
   const missing = new Set();
   const me = myName();
@@ -301,7 +318,7 @@ function saveShopping() {
 function subscribeShopping() {
   const uidNow = currentUid();
   if (!uidNow) return;
-  onSnapshot(doc(db, 'shoppingLists', uidNow), d => {
+  listen(doc(db, 'shoppingLists', uidNow), d => {
     /* Vlastní zápis Firestore hned vrátí jako snapshot (hasPendingWrites). Stránka už
        je v tu chvíli upravená cíleně — překreslit ji celou by vyměnilo i pole pro
        psaní a na iPhonu by zaklapla klávesnice. Přepisujeme tedy jen cizí změny
@@ -380,8 +397,9 @@ async function deleteRecipe(id) {
   }
   showLoader('Mažu…');
   try {
-    try { await deleteObject(ref(storage, 'photos/' + id + '.jpg')); } catch { /* fotka nemusí existovat */ }
+    // nejdřív recept, pak fotka — při selhání by jinak zůstal recept s rozbitou fotkou
     await deleteDoc(doc(db, 'recipes', id));
+    try { await deleteObject(ref(storage, 'photos/' + id + '.jpg')); } catch { /* fotka nemusí existovat */ }
     hideLoader();
     return true;
   } catch (e) {
@@ -442,8 +460,10 @@ async function renameProfileEverywhere(oldName, newName) {
   }
 }
 
+// Starý recept nese kategorii i v poli `category`; prázdné `categories` by ji přes
+// recipeCategories() vrátilo zpátky, proto se maže i tam.
 function withoutCategory(r, cat) {
-  return { categories: recipeCategories(r).filter(c => c !== cat) };
+  return { categories: recipeCategories(r).filter(c => c !== cat), category: '' };
 }
 function withRenamedCategory(r, oldName, newName) {
   return { categories: recipeCategories(r).map(c => c === oldName ? newName : c) };
@@ -1591,7 +1611,8 @@ function renderDetailPage(id) {
   });
 
   // Odškrtnutí kroku taky nesmí překreslit stránku (viz fotka výše).
-  const stepsHead = view.querySelector('.dsection-head');
+  // hlavička sekce Postup — první .dsection-head na stránce je u Ingrediencí
+  const stepsHead = view.querySelector('.step-list')?.closest('.dsection')?.querySelector('.dsection-head');
   function refreshStepsReset(count) {
     let btn = view.querySelector('#steps-reset');
     if (count > 0 && !btn && stepsHead) {
@@ -2335,9 +2356,13 @@ function renderEditorPage(editId) {
       photo: photoData,
     });
   }
+  /* Posluchače patří na kořen TÉTO stránky, ne na trvalý #view — ten přežije odchod
+     z editoru, takže by psaní v Hledání či Nákupu dál volalo starý koncept a přepsalo
+     ho prázdným názvem (nebo ho po uložení receptu vzkřísilo se starými ingrediencemi). */
   if (isNew) {
-    view.addEventListener('input', saveDraftIfNew);
-    view.addEventListener('change', saveDraftIfNew);
+    const pageEl = view.querySelector('.page-narrow');
+    pageEl.addEventListener('input', saveDraftIfNew);
+    pageEl.addEventListener('change', saveDraftIfNew);
   }
 
   /* — fotka — */
@@ -3764,7 +3789,8 @@ if (DEMO) {
   render();
   subscribe();
 } else {
-  let started = false;
+  let started = false;   // appka už jednou naběhla (veřejný náhled se zkouší jen při startu)
+  let live = false;      // běží odběry dat přihlášeného účtu
   const shareId = publicShareId();
   watchAuthState(async user => {
     if (user && user.emailVerified && !currentDisplayName()) {
@@ -3781,9 +3807,11 @@ if (DEMO) {
       hideGuestBanner();
       hideAuthGate();
       renderProfileButtons();
-      if (!started) { started = true; render(); subscribe(); }
+      if (!live) { started = live = true; render(); subscribe(); }
       return;
     }
+    // odhlášení: odběry i schované stránky patřily předchozímu účtu
+    if (live) { live = false; unsubscribeAll(); pageCache.clear(); }
     renderProfileButtons();
     if (publicMode || guestMode || guestDemoFallback) return;
     if (!started && shareId && await tryPublicRecipe(shareId)) return;

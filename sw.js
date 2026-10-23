@@ -1,6 +1,6 @@
 // Service worker: cachuje jen soubory aplikace (shell). Data žijí ve Firebase,
 // takže požadavky mimo tento web necháváme být — aplikace potřebuje připojení.
-const CACHE = 'kucharka-v102';
+const CACHE = 'kucharka-v103';
 /* Fotky receptů a profilovek. Záměrně VLASTNÍ cache s vlastní verzí: přežije
    aktualizace appky, takže se po každé změně kódu nestahují znovu. Firebase u nich
    posílá `cache-control: private, max-age=0`, takže by je prohlížeč sám nikdy
@@ -60,22 +60,28 @@ self.addEventListener('fetch', e => {
      uložených kopiích není. Navíc pojistka: kopii starší než den obnovíme na
      pozadí (zobrazí se hned ta uložená, čerstvá naskočí při příštím otevření). */
   if (url.hostname === IMG_HOST) {
+    /* <img> bez crossorigin posílá požadavek v režimu no-cors a odpověď je pak
+       „opaque" (status 0, ok=false, bez hlaviček) — nic by se neuložilo a stáří by
+       nešlo poznat. Stahujeme proto v režimu cors: Firebase Storage posílá
+       `access-control-allow-origin: *` a vystavuje i hlavičku Date. */
+    const req = new Request(e.request.url, { mode: 'cors', credentials: 'omit' });
     e.respondWith((async () => {
       const cache = await caches.open(IMG_CACHE);
-      const hit = await cache.match(e.request);
+      const hit = await cache.match(req);
       if (hit) {
         const d = hit.headers.get('date');
         const stara = !d || (Date.now() - Date.parse(d)) > IMG_STALE;
         if (stara) e.waitUntil((async () => {
           try {
-            const fresh = await fetch(e.request);
-            if (fresh.ok) await cache.put(e.request, fresh);
+            const fresh = await fetch(req);
+            if (fresh.ok) await cache.put(req, fresh);
           } catch { /* offline — necháme uloženou kopii */ }
         })());
         return hit;
       }
-      const res = await fetch(e.request);
-      if (res.ok) { await cache.put(e.request, res.clone()); trimImgCache(cache); }
+      let res;
+      try { res = await fetch(req); } catch { return fetch(e.request); }   // pojistka, kdyby cors selhal
+      if (res.ok) { await cache.put(req, res.clone()); trimImgCache(cache); }
       return res;
     })());
     return;
@@ -87,8 +93,11 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' })
       .then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy));
+        // chybovou odpověď (404/500) neukládat — přepsala by dobrou zálohu pro offline
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+        }
         return res;
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
