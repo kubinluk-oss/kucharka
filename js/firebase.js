@@ -2,7 +2,7 @@
 // obě verze tedy pracují nad toutéž sbírkou receptů.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, writeBatch
+  getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getStorage, ref, uploadString, getDownloadURL, deleteObject
@@ -29,7 +29,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const auth = getAuth(app);
 export {
-  collection, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, writeBatch,
+  collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch,
   ref, uploadString, getDownloadURL, deleteObject,
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signOut, sendPasswordResetEmail, sendEmailVerification, updateProfile,

@@ -4,3 +4,6 @@
 # pracovní složky, které na web nepatří
 .backups/
 .claude/
+
+# poznámky pro Claude (na web nepatří)
+CLAUDE.md

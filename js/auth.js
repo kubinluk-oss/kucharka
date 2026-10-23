@@ -374,7 +374,7 @@ export async function changePassword(currentPassword, newPassword) {
 }
 
 /* ---------- Allowlist (meta/allowedEmails) ---------- */
-export async function getAllowedEmails() {
+async function getAllowedEmails() {
   const d = await getDoc(doc(db, 'meta', 'allowedEmails'));
   return (d.exists() && d.data().list) ? d.data().list : [];
 }

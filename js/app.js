@@ -4,14 +4,14 @@ import {
   ref, uploadString, getDownloadURL, deleteObject
 } from './firebase.js';
 import {
-  UNITS, DEFAULT_CATS, catInitial, uid, norm, escapeHtml, avgRating, scaleQty,
+  UNITS, DEFAULT_CATS, catInitial, uid, norm, escapeHtml, avgRating,
   formatTime, formatDate, starsText, ingredientMatch, compressImage,
-  aiPromptText,
+  aiPromptText, recipeCategories, qtyLabel,
   STORE_CATEGORIES, classifyIngredient
 } from './util.js';
 import {
   showLoader, hideLoader, toast, confirmDialog, alertDialog, promptDialog,
-  openSheet, closeAllSheets, createStarPicker
+  openSheet, closeAllSheets, createStarPicker, copyText
 } from './ui.js';
 import {
   watchAuthState, showAuthGate, hideAuthGate, signOutUser, currentDisplayName, currentUid,
@@ -194,13 +194,14 @@ function subscribe() {
   onSnapshot(collection(db, 'accessRequests'), snap => {
     state.accessRequests = [];
     snap.forEach(d => state.accessRequests.push({ ...d.data(), uid: d.id }));
-    onDataChanged();
+    // ukazují se jen v Nastavení (to se do paměti stránek neukládá) — jinde nic nepřekreslovat
+    if (currentRoute?.page === 'settings') renderSettingsPage();
   }, err => console.error('accessRequests sync:', err));
 
   // žebříček minihry (jméno -> nejvyšší skóre), sdílený přes cloud
   onSnapshot(doc(db, 'meta', 'highScores'), d => {
+    // čte ho jen hra, a ta si žebříček sestaví sama při vykreslení / konci kola
     state.highScores = (d.exists() && d.data().map) ? d.data().map : {};
-    onDataChanged();
   }, err => console.error('highScores sync:', err));
 
   onSnapshot(collection(db, 'recipes'), snap => {
@@ -250,23 +251,16 @@ function autoCreateProfiles() {
   }
 }
 
-function saveCategories() {
+// Sdílené dokumenty v kolekci meta. V demu se neukládá nic (data žijí jen v paměti).
+function saveMeta(id, payload, errMsg) {
   if (DEMO) return Promise.resolve();
-  return setDoc(doc(db, 'meta', 'categories'), { list: state.categories })
-    .catch(e => { console.error(e); toast('Kategorie se nepodařilo uložit'); });
+  return setDoc(doc(db, 'meta', id), payload)
+    .catch(e => { console.error(e); toast(errMsg); });
 }
-
-function saveCatStyles() {
-  if (DEMO) return Promise.resolve();
-  return setDoc(doc(db, 'meta', 'catStyles'), { map: state.catStyles })
-    .catch(e => { console.error(e); toast('Vzhled kategorií se nepodařilo uložit'); });
-}
-
-function saveAvatarPhotos() {
-  if (DEMO) return Promise.resolve();
-  return setDoc(doc(db, 'meta', 'avatarPhotos'), { map: state.avatarPhotos })
-    .catch(e => { console.error(e); toast('Profilovou fotku se nepodařilo uložit'); });
-}
+function saveCategories() { return saveMeta('categories', { list: state.categories }, 'Kategorie se nepodařilo uložit'); }
+function saveCatStyles() { return saveMeta('catStyles', { map: state.catStyles }, 'Vzhled kategorií se nepodařilo uložit'); }
+function saveAvatarPhotos() { return saveMeta('avatarPhotos', { map: state.avatarPhotos }, 'Profilovou fotku se nepodařilo uložit'); }
+function saveProfiles() { return saveMeta('profiles', { list: state.profiles }, 'Profily se nepodařilo uložit'); }
 
 // Uloží skóre, jen když překonává dosavadní osobní rekord. Vrací true při rekordu.
 // V demu (a bez přihlášení) zůstane žebříček jen v paměti prohlížeče.
@@ -275,17 +269,8 @@ function saveHighScore(name, score) {
   const best = state.highScores[name] || 0;
   if (score <= best) return false;
   state.highScores = { ...state.highScores, [name]: score };
-  if (!DEMO) {
-    setDoc(doc(db, 'meta', 'highScores'), { map: state.highScores })
-      .catch(e => { console.error(e); toast('Skóre se nepodařilo uložit'); });
-  }
+  saveMeta('highScores', { map: state.highScores }, 'Skóre se nepodařilo uložit');
   return true;
-}
-
-function saveProfiles() {
-  if (DEMO) return Promise.resolve();
-  return setDoc(doc(db, 'meta', 'profiles'), { list: state.profiles })
-    .catch(e => { console.error(e); toast('Profily se nepodařilo uložit'); });
 }
 
 /* ================= Nákupní seznam: data ================= */
@@ -317,9 +302,16 @@ function subscribeShopping() {
   const uidNow = currentUid();
   if (!uidNow) return;
   onSnapshot(doc(db, 'shoppingLists', uidNow), d => {
-    state.shopping = (d.exists() && Array.isArray(d.data().items)) ? d.data().items : [];
+    /* Vlastní zápis Firestore hned vrátí jako snapshot (hasPendingWrites). Stránka už
+       je v tu chvíli upravená cíleně — překreslit ji celou by vyměnilo i pole pro
+       psaní a na iPhonu by zaklapla klávesnice. Přepisujeme tedy jen cizí změny
+       (druhé zařízení) a i ty jen v seznamu, ne celou stránku. */
+    if (d.metadata.hasPendingWrites) return;
+    const items = (d.exists() && Array.isArray(d.data().items)) ? d.data().items : [];
+    if (JSON.stringify(items) === JSON.stringify(state.shopping)) return;   // jen potvrzení našeho zápisu
+    state.shopping = items;
     pageCache.delete('shopping');   // schovaná kopie je po změně seznamu neplatná
-    if (currentRoute?.page === 'shopping') renderShoppingPage();
+    if (currentRoute?.page === 'shopping') { renderShoppingBody(); updateShopHead(); }
   }, err => console.error('shopping sync:', err));
 }
 
@@ -334,9 +326,7 @@ function addShoppingItem(text) {
 // Přidání ingrediencí z receptu (přepočtených na porce) rovnou do seznamu.
 function addRecipeToShopping(r, mult) {
   const items = (r.ingredients || []).filter(i => i.name).map(i => {
-    const q = scaleQty(i.qty, mult);
-    const u = i.unit && i.unit !== '—' && i.unit !== 'počet' ? i.unit : '';
-    const qtyPart = [q, u].filter(Boolean).join(' ');
+    const qtyPart = qtyLabel(i, mult, { hideCount: true });
     const text = qtyPart ? `${i.name} (${qtyPart})` : i.name;
     return { id: uid(), text, cat: classifyIngredient(i.name), done: false };
   });
@@ -344,6 +334,16 @@ function addRecipeToShopping(r, mult) {
   state.shopping.push(...items);
   saveShopping();
   return items.length;
+}
+
+/* Nahraje fotku (data URL) do Storage a vrátí adresu ke stažení. Bez cacheControl
+   posílá Firebase `max-age=0` a fotka se stahuje při každém zobrazení znovu. Dlouhá
+   platnost je bezpečná: při KAŽDÉM nahrání dostane soubor nový přístupový token,
+   takže vrácená adresa je JINÁ a všem se tím fotka přirozeně obnoví. */
+async function uploadPhoto(path, dataUrl) {
+  const photoRef = ref(storage, path);
+  await uploadString(photoRef, dataUrl, 'data_url', { cacheControl: 'public, max-age=31536000' });
+  return getDownloadURL(photoRef);
 }
 
 async function saveRecipe(recipe) {
@@ -359,13 +359,7 @@ async function saveRecipe(recipe) {
     const id = data.id;
     delete data.id;
     if (data.photo && data.photo.startsWith('data:')) {
-      const photoRef = ref(storage, 'photos/' + id + '.jpg');
-      // Bez tohohle posílá Firebase `max-age=0` a fotka se stahuje při každém
-      // zobrazení znovu. Dlouhá platnost je bezpečná: při KAŽDÉM nahrání dostane
-      // soubor nový přístupový token, takže `getDownloadURL` níž vrátí JINOU
-      // adresu, uloží ji do receptu a všem se tím fotka přirozeně obnoví.
-      await uploadString(photoRef, data.photo, 'data_url', { cacheControl: 'public, max-age=31536000' });
-      data.photo = await getDownloadURL(photoRef);
+      data.photo = await uploadPhoto('photos/' + id + '.jpg', data.photo);
     }
     await setDoc(doc(db, 'recipes', id), data);
     hideLoader();
@@ -425,8 +419,7 @@ async function renameProfileEverywhere(oldName, newName) {
   showLoader('Přejmenovávám…');
   try {
     state.profiles = state.profiles.map(p => p === oldName ? newName : p);
-    await saveProfiles();
-    if (renameAvatarPhotoKey(oldName, newName)) await saveAvatarPhotos();
+    await Promise.all([saveProfiles(), renameAvatarPhotoKey(oldName, newName) && saveAvatarPhotos()]);
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
@@ -473,8 +466,7 @@ async function deleteCategoryEverywhere(cat) {
   showLoader('Mažu kategorii…');
   try {
     state.categories = state.categories.filter(c => c !== cat);
-    await saveCategories();
-    if (hadStyle) await saveCatStyles();
+    await Promise.all([saveCategories(), hadStyle && saveCatStyles()]);
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
@@ -506,8 +498,7 @@ async function renameCategoryEverywhere(oldName, newName) {
   showLoader('Přejmenovávám…');
   try {
     state.categories = state.categories.map(c => c === oldName ? newName : c);
-    await saveCategories();
-    await saveCatStyles();
+    await Promise.all([saveCategories(), saveCatStyles()]);
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
@@ -524,12 +515,6 @@ async function renameCategoryEverywhere(oldName, newName) {
 }
 
 /* ================= Odvozená data ================= */
-// Recept může patřit do víc kategorií (pole `categories`). Staré recepty bez tohoto
-// pole (z doby před touto funkcí) mají jen `category` — bere se jako kategorie jedna.
-function recipeCategories(r) {
-  if (Array.isArray(r.categories) && r.categories.length) return r.categories;
-  return r.category ? [r.category] : [];
-}
 // „Hlavní" kategorie receptu — určuje barvu/emoji miniatury.
 function primaryCategory(r) { return recipeCategories(r)[0] || ''; }
 
@@ -622,6 +607,16 @@ function recipeGlyph(r) {
   const e = cat && state.catStyles[cat] && state.catStyles[cat].emoji;
   return e || catInitial(cat || r.name);
 }
+// Barevná dlaždice místo chybějící fotky: barva a emoji/písmeno hlavní kategorie.
+function recipePhHtml(r, cls, extraStyle = '') {
+  const cat = primaryCategory(r) || '__none';
+  const g = recipeGlyph(r);
+  return `<div class="${cls} ${catGrad(cat)}${isEmojiGlyph(g) ? ' is-emoji' : ''}" style="${extraStyle}${catColorStyle(cat)}">${g}</div>`;
+}
+
+const skelRows = n => '<div class="skel-row"><div class="sk-thumb"></div><div class="sk-lines"><div class="sk-line"></div><div class="sk-line short"></div></div></div>'.repeat(n);
+const NOT_FOUND_HTML = `<div class="empty"><h3>Recept nenalezen</h3><p>Možná ho někdo právě smazal.</p><a class="btn btn-primary" href="#/">Zpět domů</a></div>`;
+
 // je glyf emoji? (kvůli velikosti písma – serif písmeno vs emoji)
 function isEmojiGlyph(g) { return !!g && /\p{Extended_Pictographic}/u.test(g); }
 
@@ -644,12 +639,11 @@ function rowHtml(r, { currentCat = null } = {}) {
   if (r.portions) meta.push(`${escapeHtml(String(r.portions))} porcí`);
   if (avg) meta.push(`<span class="st">★ ${fmtAvg(avg)}</span>`);
   const cats = displayCategoriesFor(r, currentCat);
-  const pCat = primaryCategory(r);
   return `
   <a class="row" href="#/recept/${escapeHtml(r.id)}">
     ${r.photo
       ? `<img class="row-thumb" src="${escapeHtml(r.photo)}" alt="" loading="lazy" decoding="async" width="72" height="72">`
-      : `<div class="row-thumb-ph ${catGrad(pCat || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(pCat || '__none')}">${recipeGlyph(r)}</div>`}
+      : recipePhHtml(r, 'row-thumb-ph')}
     <div class="row-body">
       ${cats.length ? `<div class="row-kicker">${cats.map(escapeHtml).join(' · ')}</div>` : ''}
       <div class="row-name">${escapeHtml(r.name)}</div>
@@ -664,12 +658,11 @@ function shelfCardHtml(r) {
   const meta = [];
   if (r.cookTime) meta.push(escapeHtml(formatTime(r.cookTime)));
   if (avg) meta.push(`<span class="st">★ ${fmtAvg(avg)}</span>`);
-  const pCat = primaryCategory(r);
   return `
   <a class="shelf-card" href="#/recept/${escapeHtml(r.id)}">
     ${r.photo
       ? `<img class="sc-photo" src="${escapeHtml(r.photo)}" alt="" loading="lazy" decoding="async" width="168" height="168">`
-      : `<div class="sc-ph ${catGrad(pCat || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(pCat || '__none')}">${recipeGlyph(r)}</div>`}
+      : recipePhHtml(r, 'sc-ph')}
     <div class="sc-name">${escapeHtml(r.name)}</div>
     <div class="sc-meta">${meta.join(' · ')}</div>
   </a>`;
@@ -685,14 +678,24 @@ function activeFiltersHtml() {
   return chips.length ? `<div class="active-filters">${chips.join('')}</div>` : '';
 }
 
+/* Filtry a řazení jsou společné pro všechny výpisy i hledání. Po jejich změně jsou
+   proto neplatné i schované výpisy jinde, ne jen ten, na kterém se filtr změnil.
+   Všechny změny filtrů jdou přes tohle místo. */
+function filtersChanged(onChange) {
+  for (const k of [...pageCache.keys()]) {
+    if (k === 'search' || k.startsWith('listing:')) pageCache.delete(k);
+  }
+  onChange();
+}
+
 function bindActiveFilters(container, onChange) {
   container.querySelectorAll('[data-rm-author]').forEach(b => b.addEventListener('click', () => {
     state.profileFilter = state.profileFilter.filter(p => p !== b.dataset.rmAuthor);
-    onChange();
+    filtersChanged(onChange);
   }));
   container.querySelectorAll('[data-rm-time]').forEach(b => b.addEventListener('click', () => {
     state.timeFilter = 'all';
-    onChange();
+    filtersChanged(onChange);
   }));
 }
 
@@ -1001,6 +1004,7 @@ function render() {
   document.querySelectorAll('.menu-backdrop').forEach(m => m.remove());   // zavři „•••"/filtr popover při navigaci
   if (stopGame) { stopGame(); stopGame = null; }   // zastav běžící minihru
   editorMounted = false;
+  clearTimeout(dataRenderTimer); dataRenderTimer = 0;   // stránka se staví z čerstvých dat
   stashPage();                                    // schovej stránku, ze které odcházíme
   updateTabs(currentRoute.page, currentRoute);
 
@@ -1010,23 +1014,13 @@ function render() {
     view.replaceChildren(...hotova);
     renderProfileButtons();     // jméno/fotka profilu se mezitím mohly změnit
   } else {
-    switch (currentRoute.page) {
-      case 'home': renderHome(); break;
-      case 'cats': renderCatsPage(); break;
-      case 'listing': renderListing(currentRoute.cat); break;
-      case 'search': renderSearchPage(); break;
-      case 'shopping': renderShoppingPage(); break;
-      case 'detail': renderDetailPage(currentRoute.id); break;
-      case 'editor': renderEditorPage(currentRoute.id); break;
-      case 'settings': renderSettingsPage(); break;
-      case 'game': renderGamePage(); break;
-    }
+    PAGES[currentRoute.page](currentRoute);
   }
   cachedKey = key;
   window.scrollTo(0, scrollPos[location.hash] || 0);
   updateHomeAvatar();   // nastav viditelnost avataru podle obnovené pozice scrollu
-  // jemný nájezd obsahu při NAVIGACI (ne při živých překresleních přes
-  // onDataChanged/klik na krok — ty volají render*Page přímo, bez animace)
+  // jemný nájezd obsahu jen při NAVIGACI (živá překreslení přes onDataChanged
+  // volají render*Page přímo, bez animace)
   view.classList.remove('page-enter');
   void view.offsetWidth;   // restart animace
   view.classList.add('page-enter');
@@ -1050,23 +1044,37 @@ function onLocationChange() {
 window.addEventListener('hashchange', onLocationChange);
 window.addEventListener('popstate', onLocationChange);
 
-// Živá data dorazila -> obnovit aktuální stránku (šetrně, ať nezmizí rozepsaný text).
+// Jak se která stránka staví načisto.
+const PAGES = {
+  home: () => renderHome(),
+  cats: () => renderCatsPage(),
+  listing: r => renderListing(r.cat),
+  search: () => renderSearchPage(),
+  shopping: () => renderShoppingPage(),
+  detail: r => renderDetailPage(r.id),
+  editor: r => renderEditorPage(r.id),
+  settings: () => renderSettingsPage(),
+  game: () => renderGamePage(),
+};
+
+/* Živá data dorazila -> obnovit aktuální stránku (šetrně, ať nezmizí rozepsaný text).
+   Při startu přijde z cloudu několik dokumentů rychle po sobě (recepty, kategorie,
+   vzhled, fotky…) a každý by stránku postavil znovu. Proto se překreslení slije do
+   jednoho na konci běhu. Paměť stránek se ale zahazuje HNED, ať se nikdy neobnoví
+   stará podoba. */
+let dataRenderTimer = 0;
 function onDataChanged() {
-  const y = window.scrollY;
-  /* Schované stránky jsou teď neplatné — data se změnila. Zahodit je MUSÍME i když
-     zrovna stojíme jinde, jinak by se při návratu ukázala stará podoba (recept
-     upravený z editoru by se na Domů neprojevil). */
   pageCache.clear();
-  switch (currentRoute.page) {
-    case 'home': renderHome(); break;
-    case 'cats': renderCatsPage(); break;
-    case 'listing': renderListing(currentRoute.cat); break;
-    case 'search': updateSearchResults(); return;
-    case 'detail': renderDetailPage(currentRoute.id); break;
-    case 'editor': if (!editorMounted) renderEditorPage(currentRoute.id); else return; break;
-    case 'settings': renderSettingsPage(); break;
-    case 'game': return;   // rozehranou hru nepřekreslovat (restartovala by se)
-  }
+  if (!dataRenderTimer) dataRenderTimer = setTimeout(rerenderForData, 0);
+}
+function rerenderForData() {
+  dataRenderTimer = 0;
+  const page = currentRoute.page;
+  if (page === 'game' || page === 'shopping') return;   // hra by se restartovala; nákup má vlastní data
+  if (page === 'search') { updateSearchResults(); return; }
+  if (page === 'editor' && editorMounted) return;       // nepřepisovat rozepsaný recept
+  const y = window.scrollY;
+  PAGES[page](currentRoute);
   window.scrollTo(0, y);
 }
 
@@ -1103,7 +1111,7 @@ function renderHome() {
     view.innerHTML = `
       ${greetingRowHtml('Načítám kuchařku…')}
       <div class="skel-hero"></div>
-      <div class="row-list">${'<div class="skel-row"><div class="sk-thumb"></div><div class="sk-lines"><div class="sk-line"></div><div class="sk-line short"></div></div></div>'.repeat(3)}</div>`;
+      <div class="row-list">${skelRows(3)}</div>`;
     wireViewAvatarButtons(); renderProfileButtons();
     return;
   }
@@ -1134,7 +1142,7 @@ function renderHome() {
     <a class="hero" href="#/recept/${escapeHtml(hero.id)}">
       ${hero.photo
         ? `<img src="${escapeHtml(hero.photo)}" alt="" decoding="async" fetchpriority="high">`
-        : `<div class="hero-ph ${catGrad(primaryCategory(hero) || '__none')}${isEmojiGlyph(recipeGlyph(hero)) ? ' is-emoji' : ''}" style="position:absolute;inset:0;${catColorStyle(primaryCategory(hero) || '__none')}">${recipeGlyph(hero)}</div>`}
+        : recipePhHtml(hero, 'hero-ph', 'position:absolute;inset:0;')}
       <div class="scrim"></div>
       <span class="hero-sticker">Recept dne</span>
       <div class="hero-body">
@@ -1253,7 +1261,7 @@ function renderListing(catKey) {
     ${activeFiltersHtml()}
     <div>
       ${!list
-        ? `<div class="row-list">${'<div class="skel-row"><div class="sk-thumb"></div><div class="sk-lines"><div class="sk-line"></div><div class="sk-line short"></div></div></div>'.repeat(5)}</div>`
+        ? `<div class="row-list">${skelRows(5)}</div>`
         : list.length
           ? `<div class="row-list">${list.map(r => rowHtml(r, { currentCat: catKey })).join('')}</div>`
           : `<div class="empty"><h3>Nic tu není</h3><p>${filterCount() ? 'Zkus povolit filtry.' : 'Zatím sem nikdo nic nepřidal.'}</p><a class="btn btn-primary" href="#/novy">Přidat recept</a></div>`}
@@ -1413,11 +1421,11 @@ function openFilterSheet(anchorEl, onChange) {
       a.classList.toggle('active');
     } else if (e.target.id === 'filter-reset') {
       state.profileFilter = []; state.timeFilter = 'all'; state.sortMode = 'newest';
-      onChange();
+      filtersChanged(onChange);
       po.close();
       return;
     } else return;
-    onChange();
+    filtersChanged(onChange);
   });
 }
 
@@ -1434,26 +1442,24 @@ function setCheckedSteps(id, set) {
   else localStorage.removeItem(stepsKey(id));
 }
 
-let detailId = null;
-let detailPortions = 1;
+/* Zvolené porce si pamatujeme ZVLÁŠŤ pro každý recept. Dřív to byla jedna globální
+   proměnná — jenže paměť stránek drží víc otevřených receptů najednou, a po návratu
+   na recept A (s 6 porcemi) z receptu B by „+" počítalo s porcemi B. */
+const portionsById = new Map();
 
 function renderDetailPage(id) {
   if (!state.loaded) {
     view.innerHTML = `<div class="page-narrow"><div class="skel-hero"></div>
-      <div class="row-list">${'<div class="skel-row"><div class="sk-thumb"></div><div class="sk-lines"><div class="sk-line"></div><div class="sk-line short"></div></div></div>'.repeat(3)}</div></div>`;
+      <div class="row-list">${skelRows(3)}</div></div>`;
     return;
   }
   const r = getRecipe(id);
   if (!r) {
-    view.innerHTML = `<div class="empty"><h3>Recept nenalezen</h3><p>Možná ho někdo právě smazal.</p><a class="btn btn-primary" href="#/">Zpět domů</a></div>`;
+    view.innerHTML = NOT_FOUND_HTML;
     return;
   }
-  if (detailId !== id) {
-    detailId = id;
-    detailPortions = parseInt(r.portions) || 1;
-  }
-
   const basePortions = parseInt(r.portions) || 1;
+  let detailPortions = portionsById.get(id) ?? basePortions;
   const currentMult = () => detailPortions / basePortions;
   const mult = currentMult();   // pro první vykreslení
   const ings = (r.ingredients || []).filter(i => i.name);
@@ -1467,7 +1473,7 @@ function renderDetailPage(id) {
     <div class="detail-hero">
       ${r.photo
         ? `<img src="${escapeHtml(r.photo)}" alt="" decoding="async" fetchpriority="high">`
-        : `<div class="dh-ph ${catGrad(primaryCategory(r) || '__none')}${isEmojiGlyph(recipeGlyph(r)) ? ' is-emoji' : ''}" style="${catColorStyle(primaryCategory(r) || '__none')}">${recipeGlyph(r)}</div>`}
+        : recipePhHtml(r, 'dh-ph')}
       <div class="dh-top"></div>
       <button class="dh-back" id="d-back" aria-label="Zpět">${backSvg}</button>
       <div class="dh-actions">
@@ -1502,7 +1508,7 @@ function renderDetailPage(id) {
         <ul class="ing-list">
           ${ings.map(i => `
             <li>
-              <span class="ing-qty">${escapeHtml([scaleQty(i.qty, mult), i.unit && i.unit !== '—' ? i.unit : ''].filter(Boolean).join(' ')) || '&nbsp;'}</span>
+              <span class="ing-qty">${escapeHtml(qtyLabel(i, mult)) || '&nbsp;'}</span>
               <span>${escapeHtml(i.name)}</span>
             </li>`).join('')}
         </ul>
@@ -1569,12 +1575,12 @@ function renderDetailPage(id) {
   const qtyCells = [...view.querySelectorAll('.ing-list .ing-qty')];
   function refreshPortions() {
     const m = currentMult();
+    portionsById.set(id, detailPortions);
     if (portVal) portVal.textContent = detailPortions;
     qtyCells.forEach((cell, idx) => {
       const i = ings[idx];
       if (!i) return;
-      const txt = [scaleQty(i.qty, m), i.unit && i.unit !== '—' ? i.unit : ''].filter(Boolean).join(' ');
-      cell.textContent = txt || '\u00a0';
+      cell.textContent = qtyLabel(i, m) || '\u00a0';
     });
   }
   view.querySelector('#port-minus')?.addEventListener('click', () => {
@@ -1737,8 +1743,7 @@ function openRecipeActions(anchorEl, r, mult, portions) {
   const ro = readOnly();
   const mine = canEditRecipe(r);
   const copyAi = async () => {
-    try { await navigator.clipboard.writeText(aiPromptText(r, mult, portions)); toast('Zkopírováno. Vlož text do svého AI asistenta.'); }
-    catch { alertDialog('Kopírování se nepovedlo', 'Prohlížeč nedovolil přístup ke schránce.'); }
+    copyText(aiPromptText(r, mult, portions), 'Zkopírováno. Vlož text do svého AI asistenta.');
   };
   const del = async () => {
     const ok = await confirmDialog('Smazat recept?', `„${r.name}" zmizí všem a nejde to vrátit.`, { okLabel: 'Smazat', danger: true });
@@ -2096,8 +2101,7 @@ function openShoppingOptions() {
     const text = shoppingListPlainText();
     if (!text) { toast('Seznam je prázdný'); return; }
     if (navigator.share) { navigator.share({ title: 'Nákupní seznam', text }).catch(() => {}); sheet.close(); return; }
-    try { await navigator.clipboard.writeText(text); toast('Seznam zkopírován'); sheet.close(); }
-    catch { alertDialog('Kopírování se nepovedlo', 'Prohlížeč nedovolil přístup ke schránce.'); }
+    if (await copyText(text, 'Seznam zkopírován')) sheet.close();
   });
   sheet.body.querySelector('#so-clear-done')?.addEventListener('click', async () => {
     sheet.close();
@@ -2163,8 +2167,7 @@ function openShareSheet(r) {
       navigator.share({ title: r.name, url: shareUrl(r) }).catch(() => {});
     });
     sheet.body.querySelector('#share-copy')?.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(shareUrl(r)); toast('Odkaz zkopírován'); }
-      catch { alertDialog('Kopírování se nepovedlo', 'Prohlížeč nedovolil přístup ke schránce.'); }
+      copyText(shareUrl(r), 'Odkaz zkopírován');
     });
   }
   wire(!!r.shared);
@@ -2224,7 +2227,7 @@ function renderEditorPage(editId) {
   }
   const existing = editId ? getRecipe(editId) : null;
   if (editId && !existing) {
-    view.innerHTML = `<div class="empty"><h3>Recept nenalezen</h3><p>Možná ho někdo právě smazal.</p><a class="btn btn-primary" href="#/">Zpět domů</a></div>`;
+    view.innerHTML = NOT_FOUND_HTML;
     return;
   }
   // pojistka i proti přímé URL #/upravit/<id> — upravit smí jen autor
@@ -2476,7 +2479,7 @@ function renderEditorPage(editId) {
     if (await saveRecipe(data)) {
       if (isNew) clearRecipeDraft();
       toast(isNew ? 'Recept přidán' : 'Změny uloženy');
-      detailId = null; // ať se porce v detailu načtou znovu
+      portionsById.delete(data.id); // počet porcí se mohl změnit -> začni od nového
       location.hash = '#/recept/' + data.id;
     }
   });
@@ -2528,8 +2531,7 @@ function openCategoryManager() {
   function closeSwipes(listEl, except) {
     listEl.querySelectorAll('.catman-row.open').forEach(r => {
       if (r === except) return;
-      if (r._swipeReset) r._swipeReset();
-      else { r.classList.remove('open'); const c = r.querySelector('.cm-content'); if (c) c.style.transform = ''; }
+      r._swipeReset();   // každý řádek ho má (navěšuje enableSwipeToDelete)
     });
   }
 
@@ -2797,8 +2799,7 @@ function openCategoryEditor(existingName, onDone) {
     if (isNew) {
       state.categories.push(finalName);
       state.catStyles[finalName] = styleObj;
-      await saveCategories();
-      await saveCatStyles();
+      await Promise.all([saveCategories(), saveCatStyles()]);
       onDataChanged();
     } else {
       if (finalName !== existingName) {
@@ -3206,9 +3207,7 @@ async function setMyAvatarPhoto(dataUrl) {
   localStorage.setItem('kucharka-avatar-photo', dataUrl);
   const me = myName();
   if (!DEMO && currentUid() && me) {
-    const photoRef = ref(storage, 'avatars/' + currentUid() + '.jpg');
-    await uploadString(photoRef, dataUrl, 'data_url', { cacheControl: 'public, max-age=31536000' });
-    const url = await getDownloadURL(photoRef);
+    const url = await uploadPhoto('avatars/' + currentUid() + '.jpg', dataUrl);
     state.avatarPhotos = { ...state.avatarPhotos, [me]: url };
     await saveAvatarPhotos();
   }

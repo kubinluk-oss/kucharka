@@ -82,6 +82,12 @@ export function confirmDialog(title, msg, { okLabel = 'OK', danger = false, canc
   });
 }
 
+// Zkopíruje text do schránky a ohlásí to. Vrací true/false (volající může třeba zavřít sheet).
+export async function copyText(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); return true; }
+  catch { alertDialog('Kopírování se nepovedlo', 'Prohlížeč nedovolil přístup ke schránce.'); return false; }
+}
+
 export function alertDialog(title, msg) {
   return new Promise(resolve => {
     const { bd, close } = modalBase(`

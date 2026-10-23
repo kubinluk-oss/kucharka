@@ -223,20 +223,28 @@ export function compressImage(file, maxDim = 1280, quality = 0.82) {
   });
 }
 
+// Recept může patřit do víc kategorií (pole `categories`). Staré recepty bez tohoto
+// pole (z doby před touto funkcí) mají jen `category` — bere se jako kategorie jedna.
+export function recipeCategories(r) {
+  if (Array.isArray(r.categories) && r.categories.length) return r.categories;
+  return r.category ? [r.category] : [];
+}
+
+// „200 g", „2 lžíce"… pro ingredienci přepočtenou na porce. `hideCount` vynechá
+// jednotku „počet" (v nákupním seznamu je „3 počet" k ničemu).
+export function qtyLabel(i, mult, { hideCount = false } = {}) {
+  const u = i.unit && i.unit !== '—' && !(hideCount && i.unit === 'počet') ? i.unit : '';
+  return [scaleQty(i.qty, mult), u].filter(Boolean).join(' ');
+}
+
 // Text „Zeptat se AI" — recept + instrukce, které fungují v libovolném AI asistentovi
 // a vedou k praktickým, bezpečným radám, které jídlo nezkazí.
 export function aiPromptText(recipe, mult, portions) {
-  const ings = (recipe.ingredients || []).filter(i => i.name).map(i => {
-    const q = scaleQty(i.qty, mult);
-    const u = i.unit && i.unit !== '—' ? i.unit : '';
-    return '- ' + [q, u, i.name].filter(Boolean).join(' ');
-  }).join('\n');
+  const ings = (recipe.ingredients || []).filter(i => i.name)
+    .map(i => '- ' + [qtyLabel(i, mult), i.name].filter(Boolean).join(' ')).join('\n');
   const steps = (recipe.steps || []).filter(Boolean).map((s, i) => `${i + 1}. ${s}`).join('\n');
   const meta = [];
-  // recepty mají pole `categories`; `category` je starý jednohodnotový formát
-  const cats = (Array.isArray(recipe.categories) && recipe.categories.length)
-    ? recipe.categories
-    : (recipe.category ? [recipe.category] : []);
+  const cats = recipeCategories(recipe);
   if (cats.length) meta.push(`Kategorie: ${cats.join(', ')}`);
   if (recipe.cookTime) meta.push(`Doba přípravy: ${formatTime(recipe.cookTime)}`);
   return `Chovej se jako zkušený šéfkuchař a trpělivý rádce pro domácí kuchyni. Níže je recept přesně tak, jak ho vaříme, a pod ním můj dotaz.

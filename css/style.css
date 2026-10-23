@@ -562,17 +562,14 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   position:relative;
   margin:calc(-16px - var(--safe-top)) -20px 0;
   height:min(46vh,420px);min-height:270px;
+  background:var(--bg-elev2);   /* podklad, než se fotka vykreslí — ať nebliká prázdné místo */
 }
 @media(min-width:1024px){
   .detail-hero{margin:0 0 0;border-radius:var(--r-l);overflow:hidden;height:400px}
 }
-.detail-hero img{width:100%;height:100%;object-fit:cover}
-/* podklad pod fotkou — než se obrázek vykreslí, ať nebliká prázdné místo */
-.detail-hero{background:var(--bg-elev2)}
 /* fotka se objeví až když je hotová: buď hned (má-li se z čeho vzít), nebo prolnutím */
-.detail-hero img{opacity:0;transition:opacity .22s ease}
+.detail-hero img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .22s ease}
 .detail-hero img.is-ready{opacity:1}
-.row-thumb,.sc-photo{background:var(--bg-elev2)}
 .detail-hero .dh-ph{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
   font-family:var(--display);font-size:120px;font-weight:700;color:rgba(255,255,255,.85);
@@ -671,7 +668,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
 .step-list{display:flex;flex-direction:column;gap:9px}
 .step-item{
   display:flex;gap:13px;align-items:flex-start;background:var(--bg-elev);border-radius:var(--r-m);
-  padding:13px 15px;box-shadow:var(--shadow-s);cursor:pointer;transition:opacity .2s;
+  padding:13px 15px;box-shadow:var(--shadow-s);cursor:pointer;transition:opacity .2s,box-shadow .2s;
   text-align:left;width:100%;
 }
 .step-num{
@@ -887,8 +884,7 @@ button.settings-row:active{background:var(--accent-soft)}
   transition:transform .28s cubic-bezier(.32,.72,.24,1);
   touch-action:pan-y;will-change:transform;
 }
-.catman-row.swiping .cm-content{transition:none}
-.catman-row.dragging .cm-content{transition:none}
+.catman-row.swiping .cm-content,.catman-row.dragging .cm-content{transition:none}
 .cm-name{flex:1;min-width:0;display:flex;gap:8px;align-items:center;font-size:16px;font-weight:650}
 .cm-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cm-count{font-size:12px;color:var(--text-3);font-weight:750;flex-shrink:0}
@@ -1291,7 +1287,6 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
   .sheet-close:hover{color:var(--text)}
 }
 .dh-back,.dh-actions{transition:transform .14s cubic-bezier(.34,1.56,.64,1)}
-.step-item{transition:opacity .2s,box-shadow .2s}
 
 /* Nájezd obsahu při navigaci mezi stránkami (mobil i desktop) — krátký fade +
    posun nahoru, jako přechody v nativních iOS appkách. Spouští render() jen při
