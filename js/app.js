@@ -1973,14 +1973,11 @@ function openRecipeActions(anchorEl, r, mult, portions) {
   if (wakeLockSupported)
     list.push({ icon: sunSvg, label: 'Nezhasínat displej', checked: wakeLockOn, onClick: () => setWakeLock(!wakeLockOn) });
   list.push({ icon: aiSvg, label: 'Kopírovat pro AI', onClick: copyAi });
-  if (!ro && !DEMO && state.groups.length > 1)
-    list.push({ icon: copySvg, label: 'Zkopírovat do jiné kuchařky', onClick: () => openCopyToGroup(r) });
   if (mine) list.push({ icon: trashSvg, label: 'Smazat recept', danger: true, onClick: del });
   openContextMenu(anchorEl, { top, list });
 }
 
 /* ================= Nákupní seznam (stránka) ================= */
-const copySvg = `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M15.5 8.5V6.5A2.5 2.5 0 0 0 13 4H6.5A2.5 2.5 0 0 0 4 6.5V13a2.5 2.5 0 0 0 2.5 2.5h2" fill="none" stroke="currentColor" stroke-width="1.9"/></svg>`;
 const bagSvg = `<svg viewBox="0 0 24 24" width="46" height="46"><path d="M7 8V6.5a5 5 0 0 1 10 0V8m-13 0h16l-1 12.2a1.8 1.8 0 0 1-1.8 1.8H6.8A1.8 1.8 0 0 1 5 20.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 
 function renderShoppingPage() {
@@ -2365,31 +2362,63 @@ function shareUrl(r) {
   const g = state.activeGroup ? '?g=' + encodeURIComponent(state.activeGroup) : '';
   return location.origin + location.pathname + g + '#/recept/' + encodeURIComponent(r.id);
 }
+// Karta sdílení: nahoře kopie do jiné mé kuchařky (skupiny), dole veřejný odkaz
+// pro kohokoli i bez účtu. Horní část se ukáže, jen když nějakou další kuchařku mám.
 function openShareSheet(r) {
   const canShare = !!navigator.share;
-  const body = shared => `
-    <p class="muted" style="font-size:13px;margin:0 0 14px">Kdokoli s odkazem uvidí tento recept i bez přihlášení do kuchařky. Zbytek kuchařky zůstane zamčený.</p>
+  const targets = DEMO ? [] : state.groups.filter(g => g.id !== state.activeGroup);
+  const linkHtml = shared => `
+    <p class="muted share-note">Kdokoli s odkazem uvidí tento recept i bez přihlášení. Zbytek kuchařky zůstane zamčený.</p>
     <button class="btn btn-block ${shared ? '' : 'btn-primary'}" id="share-toggle">${shared ? 'Vypnout sdílení' : 'Zapnout sdílení'}</button>
     ${shared ? `
     <div class="form-row" style="margin-top:10px">
       ${canShare ? '<button class="btn btn-primary" id="share-native">Sdílet odkaz</button>' : ''}
       <button class="btn ${canShare ? '' : 'btn-primary'}" id="share-copy">Kopírovat odkaz</button>
     </div>` : ''}`;
-  const sheet = openSheet({ title: 'Sdílet recept', bodyHtml: body(!!r.shared) });
+  const sheet = openSheet({
+    title: 'Sdílet recept',
+    bodyHtml: `
+      ${targets.length ? `
+      <h3 class="share-h">Do jiné kuchařky</h3>
+      <p class="muted share-note">Vznikne samostatná kopie, kterou tam můžeš upravovat. Hodnocení se nepřenášejí.</p>
+      <div class="settings-card share-targets">
+        ${targets.map(g => `
+          <button class="settings-row" data-copy-to="${escapeHtml(g.id)}">
+            <span class="row-label">${escapeHtml(g.name || 'Bez názvu')}</span><span class="row-chevron">Zkopírovat ›</span>
+          </button>`).join('')}
+      </div>
+      <h3 class="share-h">Odkaz pro kohokoli</h3>` : ''}
+      <div id="share-link">${linkHtml(!!r.shared)}</div>`,
+  });
+
+  sheet.body.querySelectorAll('[data-copy-to]').forEach(b => b.addEventListener('click', async () => {
+    showLoader('Kopíruju…');
+    try {
+      await copyRecipeToGroup(r, b.dataset.copyTo);
+      hideLoader();
+      sheet.close();
+      toast('Recept zkopírován');
+    } catch (e) {
+      console.error(e); hideLoader();
+      alertDialog('Nepovedlo se', 'Recept se nepodařilo zkopírovat.');
+    }
+  }));
+
+  const linkBox = sheet.body.querySelector('#share-link');
   function wire(shared) {
-    sheet.body.querySelector('#share-toggle').addEventListener('click', async () => {
+    linkBox.querySelector('#share-toggle').addEventListener('click', async () => {
       const fresh = getRecipe(r.id);
       if (!fresh) return;
       const next = !shared;
       if (!await saveRecipe({ ...fresh, shared: next })) return;
-      sheet.body.innerHTML = body(next);
+      linkBox.innerHTML = linkHtml(next);
       wire(next);
       toast(next ? 'Recept jde teď otevřít bez přihlášení' : 'Sdílení vypnuto');
     });
-    sheet.body.querySelector('#share-native')?.addEventListener('click', () => {
+    linkBox.querySelector('#share-native')?.addEventListener('click', () => {
       navigator.share({ title: r.name, url: shareUrl(r) }).catch(() => {});
     });
-    sheet.body.querySelector('#share-copy')?.addEventListener('click', async () => {
+    linkBox.querySelector('#share-copy')?.addEventListener('click', () => {
       copyText(shareUrl(r), 'Odkaz zkopírován');
     });
   }
@@ -3439,34 +3468,6 @@ function openGroupSheet(gIn) {
     });
   }
   draw();
-}
-
-// Výběr cílové kuchařky pro kopii receptu.
-function openCopyToGroup(r) {
-  const targets = state.groups.filter(g => g.id !== state.activeGroup);
-  const sheet = openSheet({
-    title: 'Zkopírovat do kuchařky',
-    bodyHtml: `
-      <p class="muted" style="font-size:13px;margin:0 0 12px">Vznikne samostatná kopie, kterou tam můžeš upravovat. Hodnocení se nepřenášejí.</p>
-      <div class="settings-card">
-        ${targets.map(g => `
-          <button class="settings-row" data-copy-to="${escapeHtml(g.id)}">
-            <span class="row-label">${escapeHtml(g.name || 'Bez názvu')}</span><span class="row-chevron">›</span>
-          </button>`).join('')}
-      </div>`,
-  });
-  sheet.body.querySelectorAll('[data-copy-to]').forEach(b => b.addEventListener('click', async () => {
-    showLoader('Kopíruju…');
-    try {
-      await copyRecipeToGroup(r, b.dataset.copyTo);
-      hideLoader();
-      sheet.close();
-      toast('Recept zkopírován');
-    } catch (e) {
-      console.error(e); hideLoader();
-      alertDialog('Nepovedlo se', 'Recept se nepodařilo zkopírovat.');
-    }
-  }));
 }
 
 async function renameProfile() {
