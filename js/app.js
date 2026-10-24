@@ -75,6 +75,8 @@ function applyTheme() {
   const pref = getThemePref();
   const dark = pref === 'dark' || (pref === 'system' && mqDark.matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  // barva stavového řádku a lišt prohlížeče podle ZVOLENÉHO režimu (ne jen systémového)
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = dark ? '#16120E' : '#FAF6EF'; });
 }
 mqDark.addEventListener('change', applyTheme);
 applyTheme();
