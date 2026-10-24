@@ -170,6 +170,12 @@ export function scaleQty(qty, mult) {
   return formatQty(n * mult);
 }
 
+// Česká množná čísla: plural(3, 'recept', 'recepty', 'receptů') -> „3 recepty"
+export function plural(n, one, few, many) {
+  const w = n === 1 ? one : (n >= 2 && n <= 4) ? few : many;
+  return `${n} ${w}`;
+}
+
 export function formatTime(mins) {
   const m = parseInt(mins) || 0;
   if (m <= 0) return '';

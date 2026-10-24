@@ -31,7 +31,7 @@
     <a href="#/hledat" id="nav-search" data-tab="search">Hledat</a>
   </nav>
   <div class="topnav-right">
-    <a class="topnav-add" id="nav-add" href="#/novy">＋ Nový recept</a>
+    <a class="topnav-add" id="nav-add" href="#/novy"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>Nový recept</a>
     <button class="profile-btn profile-avatar-btn" id="profile-btn-desktop" aria-label="Profil a nastavení"></button>
   </div>
 </header>
@@ -41,6 +41,9 @@
   <span>Kuchařka je jinak zamčená</span>
   <button id="public-login-btn">Zobrazit celou kuchařku</button>
 </div>
+
+<!-- Navigační lišta (mobil): sklo + malý nadpis, když velký nadpis odjede (viz updateNavbar) -->
+<div class="navbar" id="navbar" aria-hidden="true"><span class="navbar-title" id="navbar-title"></span></div>
 
 <main id="view"></main>
 <footer class="site-footer">Kuchařka · vyrobeno s láskou a hladem</footer>

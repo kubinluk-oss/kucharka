@@ -79,6 +79,13 @@
   --ease-in:cubic-bezier(.5,0,.75,0);
   --t-fast:.16s;
   --t-med:.26s;
+  /* Typografická škála — každý text v appce používá jeden z těchto stupňů */
+  --fs-large:34px;     /* velký nadpis stránky */
+  --fs-title:22px;     /* nadpis sekce, okna */
+  --fs-headline:17px;  /* název v řádku, tlačítko */
+  --fs-body:16px;      /* běžný text */
+  --fs-sub:14px;       /* podtext, metadata */
+  --fs-caption:12.5px; /* popisky, nadpisy skupin */
   /* Jednotné ohraničení ploch (tlačítka, chipy, pole) a prstenec zaostření pole */
   --line:inset 0 0 0 1px var(--separator);
   --ring:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent);
@@ -291,7 +298,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
 .page-head.page-head-center{justify-content:center}
 .page-head.page-head-center .ph-text{flex:none;text-align:center}
 .page-head.page-head-center .page-title{font-size:26px;margin-top:12px}
-.page-title{font-family:var(--display);font-size:32px;font-weight:700;letter-spacing:-.5px;line-height:1.15}
+.page-title{font-family:var(--display);font-size:var(--fs-large);font-weight:700;letter-spacing:-.6px;line-height:1.12}
 .page-sub{font-size:14px;color:var(--text-2);margin-top:3px}
 /* Plovoucí rohová tlačítka (Zpět, filtr) — průhledné sklo se stejným plastickým
    feelem jako zbytek appky, ale PODLE REŽIMU: leží na pozadí stránky, takže ve
@@ -796,7 +803,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;
   min-height:50px;padding:0 22px;border-radius:16px;
   font-size:15.5px;font-weight:700;letter-spacing:-.1px;line-height:1.2;
-  background:var(--bg-elev);color:var(--text);box-shadow:var(--line),var(--shadow-s);
+  background:var(--bg-elev2);color:var(--text);box-shadow:none;
   -webkit-user-select:none;user-select:none;
   transition:transform var(--t-fast) var(--ease-spring),box-shadow var(--t-med) var(--ease-out),
     background-color var(--t-med) var(--ease-out),filter var(--t-med),opacity var(--t-med);
@@ -810,7 +817,8 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
 .btn-danger{color:var(--danger);background:color-mix(in srgb,var(--danger) 9%,var(--bg-elev));box-shadow:none}
 /* vedlejší akce v akcentní barvě na běžném zvednutém podkladu (např. „＋ Nová
    kategorie" ve výběru kategorií, kde hlavní akcí je výběr ze seznamu) */
-.btn-accent{color:var(--accent)}
+.btn-accent{color:var(--accent);background:var(--accent-soft)}
+.btn .ic{width:19px;height:19px}
 .btn-block{width:100%}
 
 /* ============ Formuláře ============ */
@@ -829,7 +837,7 @@ body.no-tabbar #view{padding-bottom:calc(40px + var(--safe-bottom))}
   color:var(--accent);font-size:16px;font-weight:600;text-align:right;
 }
 button.field-row{width:100%;text-align:left}
-button.field-row:active{background:var(--accent-soft)}
+button.field-row:active{background-color:var(--accent-soft)}
 button.field-row .row-chevron{flex-shrink:0;color:var(--text-3);font-size:15px}
 
 /* řádek pickeru kategorií — checkmark vpravo, konzistentní se settings-row */
@@ -901,7 +909,7 @@ button.field-row .row-chevron{flex-shrink:0;color:var(--text-3);font-size:15px}
   transition:background-color var(--t-fast) var(--ease-out);
 }
 .settings-row:last-child{border-bottom:none}
-button.settings-row:active{background:var(--accent-soft)}
+button.settings-row:active{background-color:var(--accent-soft)}
 .settings-row .row-label{flex:1}
 .settings-row .row-chevron{color:var(--text-3);font-size:15px}
 .theme-seg{display:flex;background:var(--bg-elev2);border-radius:12px;padding:2px}
@@ -1019,7 +1027,7 @@ button.settings-row:active{background:var(--accent-soft)}
   width:100%;max-width:560px;max-height:calc(100dvh - 64px - var(--safe-top));
   border-radius:var(--r-l);box-shadow:var(--shadow-l);
   display:flex;flex-direction:column;
-  animation:sheetIn .42s var(--ease-out);
+  animation:sheetIn .4s var(--ease-spring);
 }
 .sheet::before{
   content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;
@@ -1043,8 +1051,8 @@ button.settings-row:active{background:var(--accent-soft)}
 @keyframes popIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes popOut{from{transform:scale(1);opacity:1}to{transform:scale(.95);opacity:0}}
 /* panel vyjede kousek zespodu a doroste — měkce, bez poskakování */
-@keyframes sheetIn{from{opacity:0;transform:translateY(22px) scale(.97)}to{opacity:1;transform:none}}
-@keyframes sheetOut{to{opacity:0;transform:translateY(12px) scale(.98)}}
+@keyframes sheetIn{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:none}}
+@keyframes sheetOut{to{opacity:0;transform:scale(.96)}}
 
 /* ============ Modal ============ */
 .modal-backdrop{
@@ -1069,7 +1077,7 @@ button.settings-row:active{background:var(--accent-soft)}
 
 /* ============ Toast ============ */
 .toast-root{
-  position:fixed;left:0;right:0;bottom:calc(96px + var(--safe-bottom));z-index:400;
+  position:fixed;left:0;right:0;top:calc(var(--safe-top) + 12px);z-index:400;
   display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;
 }
 .toast{
@@ -1080,8 +1088,8 @@ button.settings-row:active{background:var(--accent-soft)}
   animation:toastIn .45s var(--ease-spring);max-width:min(86vw,440px);text-align:center;
 }
 .toast.hide{animation:toastOut .28s var(--ease-in) forwards}
-@keyframes toastIn{from{transform:translateY(18px) scale(.92);opacity:0}to{transform:none;opacity:1}}
-@keyframes toastOut{to{transform:translateY(10px) scale(.96);opacity:0}}
+@keyframes toastIn{from{transform:translateY(-22px) scale(.92);opacity:0}to{transform:none;opacity:1}}
+@keyframes toastOut{to{transform:translateY(-14px) scale(.96);opacity:0}}
 
 /* ============ Loader ============ */
 .loader-backdrop{
@@ -1151,7 +1159,7 @@ button.settings-row:active{background:var(--accent-soft)}
 /* Přihlášení přes Google — staví na .btn (stejný tvar, výška i stisk jako ostatní
    tlačítka), jen s logem vlevo. */
 .oauth-row{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}
-.oauth-btn{gap:10px;font-size:14.5px}
+.oauth-btn{gap:10px;font-size:14.5px;background:var(--bg-elev);box-shadow:var(--line),var(--shadow-s)}
 .oauth-btn svg{flex-shrink:0}
 .oauth-btn:disabled{opacity:.55}
 /* oddělovač „nebo e-mailem" — linka přes celou šířku s popiskem uprostřed */
@@ -1332,16 +1340,18 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 /* Myš (desktop): jemný hover na interaktivních prvcích — stejný jazyk jako
    existující hover u hero/karet poliček (lehké zvednutí, žádné barevné skoky). */
 @media(hover:hover){
-  .btn:hover{transform:translateY(-1px);box-shadow:var(--line),var(--shadow-m)}
+  .btn:hover{transform:translateY(-1px);background-color:color-mix(in srgb,var(--text) 9%,var(--bg-elev2))}
+  .btn-accent:hover{background-color:color-mix(in srgb,var(--accent) 16%,transparent)}
+  .oauth-btn:hover{background-color:var(--bg-elev);box-shadow:var(--line),var(--shadow-m)}
   .btn-primary:hover{filter:brightness(1.05);box-shadow:0 10px 26px rgba(46,107,61,.34),inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(0,0,0,.12)}
-  .btn-danger:hover{box-shadow:none;background:color-mix(in srgb,var(--danger) 14%,var(--bg-elev))}
+  .btn-danger:hover{background-color:color-mix(in srgb,var(--danger) 15%,var(--bg-elev))}
   .btn:active{transform:scale(.97)}
   .row:hover{transform:translateY(-2px);box-shadow:var(--shadow-m)}
   .cat-tile:hover{box-shadow:var(--shadow-m)}
   .fchip:hover{transform:translateY(-1px)}
   .fchip:not(.active):hover{box-shadow:var(--line),var(--shadow-m)}
   .circle-btn:hover{color:var(--accent);transform:scale(1.05)}
-  button.settings-row:hover,button.field-row:hover,label.settings-row:hover{background:var(--bg-elev2)}
+  button.settings-row:hover,button.field-row:hover,label.settings-row:hover{background-color:var(--bg-elev2)}
   .dh-back:hover{transform:scale(1.07)}
   .dh-actions:hover{transform:scale(1.04)}
   .dh-btn:hover{color:var(--accent)}
@@ -1521,3 +1531,114 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 .grp-kick:active{background:var(--accent-soft);color:var(--danger)}
 .grp-actions{display:flex;flex-direction:column;gap:8px}
 
+
+/* ==================================================================
+   PRAVIDLA ROZHRANÍ (24. 10. 2026) — platí pro celou appku
+   1. Obrazovka: plovoucí rohová tlačítka + velký nadpis. Při scrollu dostane
+      horní lišta sklo a ukáže malý nadpis (updateNavbar v app.js).
+   2. Akce: primární = plné zelené (max. jedna na obrazovce/okně), vedlejší =
+      neutrální šedé, kladná vedlejší = tónované zelené (.btn-accent),
+      nebezpečná = tónované červené. Textové odkazy jsou zelené.
+   3. Seznamy: karta se zaoblením 20, řádky min. 52 px, oddělovač odsazený zleva
+      (jako v iOS), vpravo hodnota a šipka.
+   4. Ikony: jen SVG z ICON (ui.js), žádné textové znaky.
+   5. Pohyb: stisk = zmenšení pružinou, myš = tónování, okna = prolnutí a dorůst,
+      hlášky shora.
+   ================================================================== */
+
+/* — zámek stránky pod otevřeným oknem (viz lockScroll v ui.js) — */
+html.scroll-locked{overflow:hidden}
+.sheet-body,.ctx-menu,.ep-scroll{overscroll-behavior:contain}
+
+/* — navigační lišta (mobil) — */
+.navbar{display:none}
+@media(max-width:1023px){
+  .navbar{
+    display:block;position:fixed;top:0;left:0;right:0;z-index:139;
+    height:calc(var(--safe-top) + 68px);pointer-events:none;
+    opacity:0;transition:opacity var(--t-med) var(--ease-out);
+  }
+  .navbar::before{
+    content:'';position:absolute;inset:0;
+    background-color:var(--blur-bg);
+    background-image:linear-gradient(180deg,var(--glass-sheen-1),var(--glass-sheen-2) 55%,transparent 90%);
+    -webkit-backdrop-filter:saturate(var(--glass-sat)) blur(var(--glass-blur));backdrop-filter:saturate(var(--glass-sat)) blur(var(--glass-blur));
+    box-shadow:0 .5px 0 var(--separator);
+  }
+  body.nav-glass .navbar{opacity:1}
+  .navbar-title{
+    position:absolute;left:122px;right:122px;top:calc(var(--safe-top) + 10px);
+    line-height:48px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-size:var(--fs-headline);font-weight:700;letter-spacing:-.2px;
+    opacity:0;transform:translateY(8px);
+    transition:opacity .22s var(--ease-out),transform .32s var(--ease-out);
+  }
+  body.nav-titled .navbar-title{opacity:1;transform:none}
+}
+body.public-view .navbar{display:none}
+
+/* — ikony — */
+.ic{width:1.15em;height:1.15em;flex-shrink:0;display:block}
+.row-chevron{display:inline-flex;align-items:center;gap:2px;color:var(--text-2);font-size:15px}
+.row-chevron .ic{width:17px;height:17px;color:var(--text-3)}
+.row-action{display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:700}
+.row-action .ic{width:20px;height:20px}
+.sheet-close .ic{width:17px;height:17px}
+.row-del .ic,.sb-clear .ic{width:18px;height:18px}
+.grp-kick .ic{width:15px;height:15px}
+.afilter button .ic{width:13px;height:13px}
+.photo-remove .ic{width:16px;height:16px}
+.add-row-btn .ic{width:18px;height:18px}
+.shelf-btn .ic{width:18px;height:18px}
+.arc-chev{display:flex}
+.arc-chev .ic{width:22px;height:22px}
+.grp-more .ic{width:20px;height:20px}
+.emoji-trigger .ic{width:26px;height:26px}
+.topnav-add{display:inline-flex;align-items:center;gap:6px}
+.topnav-add .ic{width:17px;height:17px}
+
+/* — seznamy: oddělovač odsazený zleva, poslední řádek bez něj — */
+.settings-row,.field-row,.grp-member,.ing-list li{
+  border-bottom:none;
+  background-image:linear-gradient(var(--separator),var(--separator));
+  background-size:calc(100% - 16px) 1px;background-position:right bottom;background-repeat:no-repeat;
+}
+.settings-row:last-child,.field-row:last-child,.grp-member:last-child,.ing-list li:last-child{background-image:none}
+.settings-card,.form-card,.ing-list{box-shadow:var(--line),var(--shadow-s)}
+
+/* — nadpisy skupin: jeden styl všude (Nastavení, formuláře, okna, filtry, nákup) — */
+.settings-group h3,.section-label,.share-h,.filter-section h4,.shop-section-head,.form-label,.ep-sec-label{
+  font-size:var(--fs-caption);font-weight:800;letter-spacing:.9px;text-transform:uppercase;color:var(--text-2);
+}
+
+/* — vyhledávací pole s lupou — */
+.search-box input{padding-left:46px}
+.search-box::before{
+  content:'';position:absolute;left:16px;top:50%;width:20px;height:20px;transform:translateY(-50%);
+  background:var(--text-3);pointer-events:none;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.search-box:focus-within::before{background:var(--accent)}
+
+/* — výběr (select): vlastní šipka z masky místo znaku ⌄ — */
+.form-select-wrap::after{
+  content:'';right:12px;width:14px;height:14px;transform:translateY(-50%);background:var(--text-3);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.form-select{padding-right:32px}
+
+/* — prázdné stavy — */
+.empty{padding:64px 28px}
+.empty h3{font-size:24px;letter-spacing:-.3px}
+.empty p{max-width:320px;margin-left:auto;margin-right:auto;line-height:1.5}
+
+/* — okna a dialogy: stejné zaoblení, stejný stín, stejná hlavička — */
+.modal-box{border-radius:var(--r-l);padding:26px 20px 18px}
+.modal-title{font-size:21px}
+.sheet-head{padding:20px 20px 12px}
+.sheet-body{padding:2px 20px 24px}
+
+/* — desktop: hlášky pod horní navigací — */
+@media(min-width:1024px){.toast-root{top:84px}}

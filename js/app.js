@@ -7,12 +7,12 @@ import {
 import {
   UNITS, DEFAULT_CATS, catInitial, uid, norm, escapeHtml, avgRating,
   formatTime, formatDate, starsText, ingredientMatch, compressImage,
-  aiPromptText, recipeCategories, qtyLabel,
+  aiPromptText, recipeCategories, qtyLabel, plural,
   STORE_CATEGORIES, classifyIngredient
 } from './util.js';
 import {
   showLoader, hideLoader, toast, confirmDialog, alertDialog, promptDialog,
-  openSheet, closeAllSheets, createStarPicker, copyText
+  openSheet, closeAllSheets, createStarPicker, copyText, ICON
 } from './ui.js';
 import {
   watchAuthState, showAuthGate, hideAuthGate, signOutUser, currentDisplayName, currentUid,
@@ -988,7 +988,7 @@ function rowHtml(r, { currentCat = null } = {}) {
   const avg = avgRating(r.reviews);
   const meta = [];
   if (r.cookTime) meta.push(escapeHtml(formatTime(r.cookTime)));
-  if (r.portions) meta.push(`${escapeHtml(String(r.portions))} porcí`);
+  if (r.portions) meta.push(portionsText(r.portions));
   if (avg) meta.push(`<span class="st">★ ${fmtAvg(avg)}</span>`);
   const cats = displayCategoriesFor(r, currentCat);
   return `
@@ -1024,9 +1024,9 @@ function activeFiltersHtml() {
   const TIME_LABELS = { '30': 'Do 30 min', '60': 'Do 1 hodiny', '120': 'Do 2 hodin', '120+': 'Přes 2 hodiny' };
   const chips = [];
   state.profileFilter.forEach(p =>
-    chips.push(`<span class="afilter">${escapeHtml(p)} <button data-rm-author="${escapeHtml(p)}">✕</button></span>`));
+    chips.push(`<span class="afilter">${escapeHtml(p)} <button data-rm-author="${escapeHtml(p)}" aria-label="Zrušit filtr">${ICON.close}</button></span>`));
   if (state.timeFilter !== 'all')
-    chips.push(`<span class="afilter">${TIME_LABELS[state.timeFilter]} <button data-rm-time="1">✕</button></span>`);
+    chips.push(`<span class="afilter">${TIME_LABELS[state.timeFilter]} <button data-rm-time="1" aria-label="Zrušit filtr">${ICON.close}</button></span>`);
   return chips.length ? `<div class="active-filters">${chips.join('')}</div>` : '';
 }
 
@@ -1129,7 +1129,7 @@ function addRecipeCardHtml() {
       <span class="arc-title">Nový recept</span>
       <span class="arc-sub">Přidej další do sbírky</span>
     </span>
-    <span class="arc-chev">›</span>
+    <span class="arc-chev">${ICON.chevron}</span>
   </a>`;
 }
 // Přeplní vizuál VŠECH aktuálně existujících instancí avatara (horní navigace na
@@ -1331,6 +1331,33 @@ function updateHomeAvatar() {
 }
 window.addEventListener('scroll', updateHomeAvatar, { passive: true });
 
+/* ---------- Navigační lišta (mobil) — vzor „large title" z iOS ----------
+   Každá stránka má nahoře velký nadpis. Jakmile pod horní okraj zajede obsah,
+   lišta dostane sklo; jakmile odjede i velký nadpis, objeví se jeho malá verze
+   uprostřed lišty. Na všech stránkách stejně, takže je vždycky vidět, kde jsem.
+   Na detailu receptu se sklo ukáže až za fotkou (přes fotku by ji jen zakalilo). */
+const navbarEl = document.getElementById('navbar');
+const navbarTitleEl = document.getElementById('navbar-title');
+let navbarFrame = 0;
+function updateNavbar() {
+  navbarFrame = 0;
+  if (!navbarEl) return;
+  const barBottom = navbarEl.getBoundingClientRect().bottom;
+  const hero = view.querySelector('.detail-hero');
+  const big = view.querySelector('.detail-title, .page-title, .greeting h1');
+  const glass = hero ? hero.getBoundingClientRect().bottom < barBottom : window.scrollY > 4;
+  const titled = !!big && big.getBoundingClientRect().bottom < barBottom - 6;
+  if (big) {
+    const text = view.querySelector('.greeting') ? 'Kuchařka' : big.textContent.trim();
+    if (navbarTitleEl.textContent !== text) navbarTitleEl.textContent = text;
+  }
+  document.body.classList.toggle('nav-glass', glass);
+  document.body.classList.toggle('nav-titled', titled);
+}
+const scheduleNavbar = () => { if (!navbarFrame) navbarFrame = requestAnimationFrame(updateNavbar); };
+window.addEventListener('scroll', scheduleNavbar, { passive: true });
+window.addEventListener('resize', scheduleNavbar);
+
 /* Po zavření klávesnice nechává iOS občas viditelnou plochu posunutou nahoru a
    fixní prvky (tab bar) pak visí výš, než mají. Tohle šťouchnutí přinutí prohlížeč
    plochu přepočítat.
@@ -1368,6 +1395,7 @@ function render() {
   // (odškrtnuté kroky a zvolené porce zůstávají — ty se drží jinde).
   window.scrollTo(0, currentRoute.page === 'detail' ? 0 : (scrollPos[location.hash] || 0));
   updateHomeAvatar();   // nastav viditelnost avataru podle obnovené pozice scrollu
+  updateNavbar();
   // jemný nájezd obsahu jen při NAVIGACI (živá překreslení přes onDataChanged
   // volají render*Page přímo, bez animace)
   view.classList.remove('page-enter');
@@ -1439,6 +1467,7 @@ function rerenderForData() {
   const y = window.scrollY;
   PAGES[page](currentRoute);
   window.scrollTo(0, y);
+  scheduleNavbar();
 }
 
 /* ================= Domů ================= */
@@ -1528,7 +1557,7 @@ function renderHome() {
         <div class="shelf-tools">
           <a href="#/vse">Zobrazit vše</a>
           <button class="shelf-btn" data-scroll="-1" aria-label="Posunout doleva">‹</button>
-          <button class="shelf-btn" data-scroll="1" aria-label="Posunout doprava">›</button>
+          <button class="shelf-btn" data-scroll="1" aria-label="Posunout doprava">${ICON.chevron}</button>
         </div>
       </div>
       <div class="shelf-scroll">${newest.map(shelfCardHtml).join('')}</div>
@@ -1541,7 +1570,7 @@ function renderHome() {
         <div class="shelf-tools">
           <a href="#/vse">Zobrazit vše</a>
           <button class="shelf-btn" data-scroll="-1" aria-label="Posunout doleva">‹</button>
-          <button class="shelf-btn" data-scroll="1" aria-label="Posunout doprava">›</button>
+          <button class="shelf-btn" data-scroll="1" aria-label="Posunout doprava">${ICON.chevron}</button>
         </div>
       </div>
       <div class="shelf-scroll">${best.map(shelfCardHtml).join('')}</div>
@@ -1577,7 +1606,7 @@ function renderCatsPage() {
     <div class="page-head">
       <div class="ph-text">
         <div class="page-title">Kategorie</div>
-        <div class="page-sub">${state.recipes.length} receptů ve sbírce</div>
+        <div class="page-sub">${plural(state.recipes.length, 'recept', 'recepty', 'receptů')} ve sbírce</div>
       </div>
     </div>
     <div class="tile-grid">
@@ -1621,7 +1650,7 @@ function renderListing(catKey) {
     <div class="page-head">
       <div class="ph-text">
         <div class="page-title">${escapeHtml(title)}</div>
-        <div class="page-sub">${list ? list.length + ' receptů' : 'Načítám…'}</div>
+        <div class="page-sub">${list ? plural(list.length, 'recept', 'recepty', 'receptů') : 'Načítám…'}</div>
       </div>
     </div>
     ${activeFiltersHtml()}
@@ -1660,7 +1689,7 @@ function renderSearchPage() {
         <input type="search" id="search-input" autocomplete="off"
           placeholder="${state.searchMode === 'ingredients' ? 'kuře, rýže, smetana…' : 'Hledat recept…'}"
           value="${escapeHtml(state.searchQuery)}">
-        <button class="sb-clear" id="search-clear" ${state.searchQuery ? '' : 'hidden'}>✕</button>
+        <button class="sb-clear" id="search-clear" aria-label="Vymazat" ${state.searchQuery ? '' : 'hidden'}>${ICON.close}</button>
       </div>
       <div class="chip-row scope-row" id="search-scope">
         <button class="fchip ${state.searchMode === 'name' ? 'active' : ''}" data-mode="name">Název</button>
@@ -1728,7 +1757,7 @@ function updateSearchResults() {
     return;
   }
   box.innerHTML = results.length
-    ? `<div class="result-count" style="margin-bottom:10px">${results.length} výsledků</div>
+    ? `<div class="result-count" style="margin-bottom:10px">${plural(results.length, 'výsledek', 'výsledky', 'výsledků')}</div>
        <div class="row-list">${results.map(r => rowHtml(r)).join('')}</div>`
     : `<div class="empty"><h3>Nic jsme nenašli</h3><p>Zkus jiné zadání${filterCount() ? ' nebo povol filtry' : ''}.</p></div>`;
 }
@@ -1853,7 +1882,7 @@ function renderDetailPage(id) {
       <h1 class="detail-title">${escapeHtml(r.name)}</h1>
       <div class="meta-pills">
         ${r.cookTime ? `<span class="mpill">${formatTime(r.cookTime)}</span>` : ''}
-        ${r.portions ? `<span class="mpill">${escapeHtml(String(r.portions))} porcí</span>` : ''}
+        ${r.portions ? `<span class="mpill">${portionsText(r.portions)}</span>` : ''}
         ${r.author ? `<span class="mpill">${escapeHtml(r.author)}</span>` : ''}
         ${avg ? `<span class="mpill"><span class="st">★</span> ${fmtAvg(avg)} (${reviews.length})</span>` : ''}
       </div>
@@ -1999,7 +2028,7 @@ function renderDetailPage(id) {
   view.querySelector('#act-shop')?.addEventListener('click', () => {
     const n = addRecipeToShopping(r, currentMult());
     if (!n) { toast('Recept nemá ingredience'); return; }
-    toast(`Přidáno ${n} položek do nákupního seznamu`);
+    toast(`Do nákupního seznamu: ${plural(n, 'položka', 'položky', 'položek')}`);
   });
   view.querySelector('#d-more').addEventListener('click', e => openRecipeActions(e.currentTarget, r, currentMult(), detailPortions));
   view.querySelector('#d-share')?.addEventListener('click', () => openShareSheet(r));
@@ -2278,7 +2307,7 @@ function openSharedListSheet() {
             ${personAvatarHtml(names[u] || '?')}
             <span class="grp-mname">${escapeHtml(names[u] || 'Člen')}${u === me ? ' (ty)' : ''}</span>
             ${u === l.ownerUid ? '<span class="grp-badge">založil/a</span>' : ''}
-            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze seznamu">✕</button>` : ''}
+            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze seznamu">${ICON.close}</button>` : ''}
           </div>`).join('')}
       </div>
       ${addable.length ? `
@@ -2668,7 +2697,7 @@ function openShareSheet(r) {
       <div class="settings-card share-targets">
         ${targets.map(g => `
           <button class="settings-row" data-copy-to="${escapeHtml(g.id)}">
-            <span class="row-label">${escapeHtml(g.name || 'Bez názvu')}</span><span class="row-chevron">Zkopírovat ›</span>
+            <span class="row-label">${escapeHtml(g.name || 'Bez názvu')}</span><span class="row-chevron">Zkopírovat${ICON.chevron}</span>
           </button>`).join('')}
       </div>
       <h3 class="share-h">Odkaz pro kohokoli</h3>` : ''}
@@ -2809,7 +2838,7 @@ function renderEditorPage(editId) {
       <button type="button" class="field-row" id="f-cat-row">
         <span class="field-label">Kategorie</span>
         <span class="field-value" id="f-cat-value"></span>
-        <span class="row-chevron">›</span>
+        <span class="row-chevron">${ICON.chevron}</span>
       </button>
       <div class="field-row">
         <span class="field-label">Autor</span>
@@ -2831,13 +2860,13 @@ function renderEditorPage(editId) {
     <div class="form-section">
       <h3 class="section-label">Ingredience</h3>
       <div id="f-ings"></div>
-      <button type="button" class="add-row-btn" id="f-add-ing">＋ Přidat ingredienci</button>
+      <button type="button" class="add-row-btn" id="f-add-ing">${ICON.plus}Přidat ingredienci</button>
     </div>
 
     <div class="form-section">
       <h3 class="section-label">Postup</h3>
       <div id="f-steps"></div>
-      <button type="button" class="add-row-btn" id="f-add-step">＋ Přidat krok</button>
+      <button type="button" class="add-row-btn" id="f-add-step">${ICON.plus}Přidat krok</button>
     </div>
 
     <div class="form-section">
@@ -2885,7 +2914,7 @@ function renderEditorPage(editId) {
   const photoInput = view.querySelector('#f-photo-input');
   function renderPhoto() {
     photoBtn.innerHTML = photoData
-      ? `<img src="${escapeHtml(photoData)}" alt=""><span class="photo-remove" id="f-photo-rm">✕</span>`
+      ? `<img src="${escapeHtml(photoData)}" alt=""><span class="photo-remove" id="f-photo-rm">${ICON.close}</span>`
       : `${cameraSvg}<span>Přidat fotku jídla</span>`;
   }
   renderPhoto();
@@ -2914,7 +2943,7 @@ function renderEditorPage(editId) {
           </select>
         </div>
         <input class="form-input ing-name-in" placeholder="např. hladká mouka" value="${escapeHtml(i.name || '')}" enterkeyhint="next">
-        <button type="button" class="row-del" data-del="${idx}" aria-label="Odebrat">✕</button>
+        <button type="button" class="row-del" data-del="${idx}" aria-label="Odebrat">${ICON.close}</button>
       </div>`;
   function renderIngRows() {
     ingsWrap.innerHTML = ings.map(ingRowHtml).join('');
@@ -2998,7 +3027,7 @@ function renderEditorPage(editId) {
       <div class="step-edit-row" data-idx="${idx}">
         <span class="step-num">${idx + 1}</span>
         <textarea class="form-textarea" placeholder="Popiš krok…">${escapeHtml(s)}</textarea>
-        <button type="button" class="row-del" data-del="${idx}" aria-label="Odebrat">✕</button>
+        <button type="button" class="row-del" data-del="${idx}" aria-label="Odebrat">${ICON.close}</button>
       </div>`).join('');
   }
   function syncStepsFromDom() {
@@ -3016,7 +3045,7 @@ function renderEditorPage(editId) {
       <div class="step-edit-row" data-idx="${steps.length - 1}">
         <span class="step-num">${steps.length}</span>
         <textarea class="form-textarea" placeholder="Popiš krok…"></textarea>
-        <button type="button" class="row-del" data-del="${steps.length - 1}" aria-label="Odebrat">✕</button>
+        <button type="button" class="row-del" data-del="${steps.length - 1}" aria-label="Odebrat">${ICON.close}</button>
       </div>`);
     stepsWrap.querySelector('.step-edit-row:last-child textarea').focus();
     saveDraftIfNew();
@@ -3098,7 +3127,7 @@ function openCategoryPicker(initialSelected, onChange) {
             ${selected.has(c) ? checkAccentSvg : ''}
           </button>`).join('') || '<p class="muted" style="padding:14px;margin:0;font-size:14px">Žádné kategorie</p>'}
       </div>
-      <button class="btn btn-accent btn-block" id="cp-add" style="margin-top:10px">＋ Nová kategorie</button>`;
+      <button class="btn btn-accent btn-block" id="cp-add" style="margin-top:10px">${ICON.plus}Nová kategorie</button>`;
 
     sheet.body.querySelectorAll('.cp-row').forEach(row => row.addEventListener('click', () => {
       const cat = row.dataset.cat;
@@ -3353,7 +3382,7 @@ function openCategoryEditor(existingName, onDone) {
     const g = emoji || (name.trim() ? name.trim()[0].toLocaleUpperCase('cs') : '?');
     prevGlyph.textContent = g;
     prevGlyph.classList.toggle('is-emoji', isEmojiGlyph(g));
-    emojiBtn.textContent = emoji || '＋';
+    if (emoji) emojiBtn.textContent = emoji; else emojiBtn.innerHTML = ICON.plus;
     emojiBtn.classList.toggle('is-emoji', isEmojiGlyph(emoji));
   }
   refreshPreview();
@@ -3552,7 +3581,7 @@ function renderSettingsPage() {
       <h3>Účet</h3>
       <div class="settings-card">
         <button class="settings-row" id="set-login">
-          <span class="row-label" style="color:var(--accent);font-weight:700">Přihlásit se</span><span class="row-chevron">›</span>
+          <span class="row-label row-action">Přihlásit se</span><span class="row-chevron">${ICON.chevron}</span>
         </button>
       </div>
     </div>` : ''}
@@ -3562,14 +3591,14 @@ function renderSettingsPage() {
       <h3>Účet</h3>
       <div class="settings-card">
         <button class="settings-row" id="set-rename">
-          <span class="row-label">Jméno</span><span class="row-chevron">${escapeHtml(me)} ›</span>
+          <span class="row-label">Jméno</span><span class="row-chevron">${escapeHtml(me)}${ICON.chevron}</span>
         </button>
         <button class="settings-row" id="set-photo">
-          <span class="row-label">Profilová fotka</span><span class="row-chevron">${photo ? 'Změnit' : 'Přidat'} ›</span>
+          <span class="row-label">Profilová fotka</span><span class="row-chevron">${photo ? 'Změnit' : 'Přidat'}${ICON.chevron}</span>
         </button>
         ${loggedIn && hasPasswordProvider() ? `
         <button class="settings-row" id="set-password">
-          <span class="row-label">Změnit heslo</span><span class="row-chevron">›</span>
+          <span class="row-label">Změnit heslo</span><span class="row-chevron">${ICON.chevron}</span>
         </button>` : ''}
         ${loggedIn ? `
         <button class="settings-row" id="set-signout">
@@ -3593,13 +3622,13 @@ function renderSettingsPage() {
             </button>
             ${g.personal ? '' : `
             <button class="grp-code" data-copy-code="${escapeHtml(g.code || '')}" aria-label="Zkopírovat kód">${escapeHtml(g.code || '')}</button>
-            <button class="grp-more" data-grp-more="${escapeHtml(g.id)}" aria-label="Spravovat skupinu">›</button>`}
+            <button class="grp-more" data-grp-more="${escapeHtml(g.id)}" aria-label="Spravovat skupinu">${ICON.chevron}</button>`}
           </div>`).join('')}
         <button class="settings-row" id="grp-create">
-          <span class="row-label" style="color:var(--accent);font-weight:700">＋ Vytvořit skupinu</span>
+          <span class="row-label row-action">${ICON.plus}Vytvořit skupinu</span>
         </button>
         <button class="settings-row" id="grp-join">
-          <span class="row-label" style="color:var(--accent);font-weight:700">Připojit se kódem</span>
+          <span class="row-label row-action">Připojit se kódem</span>
         </button>
       </div>
       <p class="settings-hint">Každá kuchařka má vlastní recepty a kategorie. Kód skupiny pošli tomu, s kým chceš recepty sdílet.</p>
@@ -3609,10 +3638,10 @@ function renderSettingsPage() {
       <h3>Kuchařka</h3>
       <div class="settings-card">
         <button class="settings-row" id="set-cats">
-          <span class="row-label">Spravovat kategorie</span><span class="row-chevron">›</span>
+          <span class="row-label">Spravovat kategorie</span><span class="row-chevron">${ICON.chevron}</span>
         </button>
         <button class="settings-row" id="set-feedback">
-          <span class="row-label">Zpětná vazba</span><span class="row-chevron">›</span>
+          <span class="row-label">Zpětná vazba</span><span class="row-chevron">${ICON.chevron}</span>
         </button>
       </div>
     </div>
@@ -3721,6 +3750,8 @@ async function promptJoinGroup() {
   } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Ke skupině se nepodařilo připojit.'); }
 }
 
+const portionsText = p => plural(parseInt(p) || 0, 'porce', 'porce', 'porcí');
+
 function memberCountText(n) {
   return n === 1 ? '1 člen' : n >= 2 && n <= 4 ? `${n} členové` : `${n} členů`;
 }
@@ -3747,7 +3778,7 @@ function openGroupSheet(gIn) {
             ${personAvatarHtml(names[u] || '?')}
             <span class="grp-mname">${escapeHtml(names[u] || 'Člen')}${u === me ? ' (ty)' : ''}</span>
             ${u === g.ownerUid ? '<span class="grp-badge">správce</span>' : ''}
-            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze skupiny">✕</button>` : ''}
+            ${owner && u !== me ? `<button class="grp-kick" data-kick="${escapeHtml(u)}" aria-label="Odebrat ze skupiny">${ICON.close}</button>` : ''}
           </div>`).join('')}
       </div>
       <div class="grp-actions">

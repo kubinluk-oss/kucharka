@@ -1,25 +1,38 @@
 // UI primitivy: loader, toasty, potvrzovací/vstupní dialogy, sheety, výběr hvězdiček.
 import { escapeHtml } from './util.js';
 
+/* Jediná sada ovládacích ikon pro celou appku (čára 2, zaoblené konce, 24×24).
+   Místo textových znaků ›, ✕, ＋ — ty se na každém zařízení vykreslí jinak
+   (jiné písmo, jiná tloušťka, jiná výška) a nesedí k ostatním ikonám. */
+const svg = d => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+export const ICON = {
+  chevron: svg('<path d="M9.5 6l6 6-6 6"/>'),
+  close: svg('<path d="M7 7l10 10M17 7L7 17"/>'),
+  plus: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
+  search: svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+};
+
 /* ---------- Zámek scrollování pozadí ----------
    Dokud je otevřený panel, dialog nebo loader, stránka pod nimi se nesmí hýbat.
-   Body se zafixuje s offsetem, ať obsah vizuálně neposkočí (funguje i na iOS). */
+   Dřív se body „přišpendlilo" (position:fixed) — v appce na ploše iPhonu to ale
+   při otevření posunulo spodní okraj (bezpečná zóna) a panel při najetí poskočil.
+   Teď se rozložení nemění vůbec: html dostane overflow:hidden (počítač) a na
+   dotyk posouvání zastaví samotné pozadí okna (touch-action v CSS), zatímco
+   obsah okna se posouvá dál a do stránky „nepropadne" (overscroll-behavior). */
 let scrollLocks = 0;
-let savedScrollY = 0;
 function lockScroll() {
   if (++scrollLocks > 1) return;
-  savedScrollY = window.scrollY;
-  const b = document.body.style;
-  b.position = 'fixed';
-  b.top = `-${savedScrollY}px`;
-  b.left = '0'; b.right = '0'; b.width = '100%';
+  document.documentElement.classList.add('scroll-locked');
 }
 function unlockScroll() {
   if (scrollLocks === 0 || --scrollLocks > 0) return;
-  const b = document.body.style;
-  b.position = ''; b.top = ''; b.left = ''; b.right = ''; b.width = '';
-  window.scrollTo(0, savedScrollY);
+  document.documentElement.classList.remove('scroll-locked');
 }
+// Dotykové posouvání pod otevřeným oknem zastavíme — kromě míst, která se posouvat
+// mají (obsah panelu, menu, výběr emoji).
+document.addEventListener('touchmove', e => {
+  if (scrollLocks && !e.target.closest('.sheet-body, .ctx-menu, .ep-scroll')) e.preventDefault();
+}, { passive: false });
 
 /* ---------- Loader ---------- */
 let loaderShown = false;
@@ -138,7 +151,7 @@ export function openSheet({ title, bodyHtml }) {
     <div class="sheet" role="dialog" aria-label="${escapeHtml(title)}">
       <div class="sheet-head">
         <h2 class="sheet-title">${escapeHtml(title)}</h2>
-        <button class="sheet-close" aria-label="Zavřít">✕</button>
+        <button class="sheet-close" aria-label="Zavřít">${ICON.close}</button>
       </div>
       <div class="sheet-body"></div>
     </div>`;
