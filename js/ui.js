@@ -28,6 +28,18 @@ function unlockScroll() {
   if (scrollLocks === 0 || --scrollLocks > 0) return;
   document.documentElement.classList.remove('scroll-locked');
 }
+/* iOS (Safari 26+) přizpůsobuje horní pruh tomu, co je u horního okraje. Ztmavené
+   pozadí okna/menu přes celou obrazovku ho přepne a po zavření se to někdy srovná
+   až při dalším posunutí stránky. Neznatelné šťouchnutí (o pixel tam a zpět)
+   přinutí iOS stav přepočítat hned. */
+export function refreshTopEdge() {
+  requestAnimationFrame(() => {
+    const y = window.scrollY;
+    window.scrollTo(0, y + 1);
+    window.scrollTo(0, y);
+  });
+}
+
 // Dotykové posouvání pod otevřeným oknem zastavíme — kromě míst, která se posouvat
 // mají (obsah panelu, menu, výběr emoji).
 document.addEventListener('touchmove', e => {
@@ -73,7 +85,7 @@ function modalBase(inner) {
     closed = true;
     unlockScroll();
     bd.classList.add('closing');
-    setTimeout(() => bd.remove(), 180);
+    setTimeout(() => { bd.remove(); refreshTopEdge(); }, 180);
   };
   return { bd, close };
 }
@@ -170,7 +182,7 @@ export function openSheet({ title, bodyHtml }) {
       const i = openSheets.indexOf(api);
       if (i >= 0) openSheets.splice(i, 1);
       bd.classList.add('closing');
-      setTimeout(() => bd.remove(), 220);
+      setTimeout(() => { bd.remove(); refreshTopEdge(); }, 220);
     }
   };
   openSheets.push(api);

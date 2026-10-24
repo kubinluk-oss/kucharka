@@ -12,7 +12,7 @@ import {
 } from './util.js';
 import {
   showLoader, hideLoader, toast, confirmDialog, alertDialog, promptDialog,
-  openSheet, closeAllSheets, createStarPicker, copyText, ICON
+  openSheet, closeAllSheets, createStarPicker, copyText, ICON, refreshTopEdge
 } from './ui.js';
 import {
   watchAuthState, showAuthGate, hideAuthGate, signOutUser, currentDisplayName, currentUid,
@@ -2074,7 +2074,7 @@ function openPopover(anchorEl, innerHtml, { className = '' } = {}) {
   panel.style.transformOrigin = flipUp ? 'bottom right' : 'top right';   // roste z rohu u kotvy
 
   let closed = false;
-  const close = () => { if (closed) return; closed = true; bd.classList.add('closing'); setTimeout(() => bd.remove(), 180); };
+  const close = () => { if (closed) return; closed = true; bd.classList.add('closing'); setTimeout(() => { bd.remove(); refreshTopEdge(); }, 180); };
   bd.addEventListener('click', e => { if (e.target === bd) close(); });
   // dvojité rAF: nejdřív se vykreslí výchozí stav (scale .82), pak se spustí přechod
   requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.add('in')));
