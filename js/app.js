@@ -1364,7 +1364,9 @@ function render() {
     PAGES[currentRoute.page](currentRoute);
   }
   cachedKey = key;
-  window.scrollTo(0, scrollPos[location.hash] || 0);
+  // Výpisy si pamatují, kam jsem doscrolloval; recept se ale otevírá vždy od začátku
+  // (odškrtnuté kroky a zvolené porce zůstávají — ty se drží jinde).
+  window.scrollTo(0, currentRoute.page === 'detail' ? 0 : (scrollPos[location.hash] || 0));
   updateHomeAvatar();   // nastav viditelnost avataru podle obnovené pozice scrollu
   // jemný nájezd obsahu jen při NAVIGACI (živá překreslení přes onDataChanged
   // volají render*Page přímo, bez animace)
