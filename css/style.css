@@ -1574,6 +1574,16 @@ html.scroll-locked{overflow:hidden}
     transition:opacity .22s var(--ease-out),transform .32s var(--ease-out);
   }
   body.nav-titled .navbar-title{opacity:1;transform:none}
+  /* Sklo přes sklo: tlačítka nad zasklenou lištou by rozmazávala už rozmazané
+     pozadí a iOS je pak vykreslí celé měkce, i s ikonou. Na liště proto
+     tlačítka nerozmazávají a mají plnou plochu — zůstanou ostrá. */
+  body.nav-glass .page-topbar .circle-btn,
+  body.nav-glass .detail-hero .dh-back,
+  body.nav-glass .detail-hero .dh-actions{
+    -webkit-backdrop-filter:none;backdrop-filter:none;background-color:var(--bg-elev);
+  }
+  /* hlášky pod řadou horních tlačítek, ať je nepřekrývají */
+  .toast-root{top:calc(var(--safe-top) + 72px)}
 }
 body.public-view .navbar{display:none}
 
