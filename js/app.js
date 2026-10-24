@@ -2887,18 +2887,19 @@ function renderEditorPage(editId) {
 
   /* — ingredience — */
   const ingsWrap = view.querySelector('#f-ings');
-  function renderIngRows() {
-    ingsWrap.innerHTML = ings.map((i, idx) => `
+  const ingRowHtml = (i, idx) => `
       <div class="ing-edit-row" data-idx="${idx}">
-        <input class="form-input ing-qty-in" placeholder="2" value="${escapeHtml(String(i.qty ?? ''))}" inputmode="decimal">
+        <input class="form-input ing-qty-in" placeholder="2" value="${escapeHtml(String(i.qty ?? ''))}" inputmode="decimal" enterkeyhint="next">
         <div class="form-select-wrap" style="width:88px;flex-shrink:0">
           <select class="form-select ing-unit-in">
             ${UNITS.map(u => `<option ${u === i.unit ? 'selected' : ''}>${u}</option>`).join('')}
           </select>
         </div>
-        <input class="form-input ing-name-in" placeholder="např. hladká mouka" value="${escapeHtml(i.name || '')}">
+        <input class="form-input ing-name-in" placeholder="např. hladká mouka" value="${escapeHtml(i.name || '')}" enterkeyhint="next">
         <button type="button" class="row-del" data-del="${idx}" aria-label="Odebrat">✕</button>
-      </div>`).join('');
+      </div>`;
+  function renderIngRows() {
+    ingsWrap.innerHTML = ings.map(ingRowHtml).join('');
   }
   function syncIngsFromDom() {
     ingsWrap.querySelectorAll('.ing-edit-row').forEach(row => {
@@ -2911,12 +2912,56 @@ function renderEditorPage(editId) {
     });
   }
   renderIngRows();
-  view.querySelector('#f-add-ing').addEventListener('click', () => {
+  /* Nový řádek ingredience se do stránky VLOŽÍ (ne překreslením celého seznamu) a
+     hned se do něj přesune kurzor. Překreslení by zničilo pole, ve kterém se zrovna
+     píše — na iPhonu by zaklapla klávesnice a z kódu ji už znovu neotevřeme. */
+  function insertIngRow(afterIdx) {
     syncIngsFromDom();
-    ings.push({ qty: '', unit: '—', name: '' });
-    renderIngRows();
-    ingsWrap.querySelector('.ing-edit-row:last-child .ing-name-in')?.focus();
+    const at = afterIdx + 1;
+    ings.splice(at, 0, { qty: '', unit: '—', name: '' });
+    const rows = ingsWrap.querySelectorAll('.ing-edit-row');
+    const html = ingRowHtml(ings[at], at);
+    if (rows[afterIdx]) rows[afterIdx].insertAdjacentHTML('afterend', html);
+    else ingsWrap.insertAdjacentHTML('beforeend', html);
+    ingsWrap.querySelectorAll('.ing-edit-row').forEach((row, k) => {
+      row.dataset.idx = k;
+      row.querySelector('[data-del]').dataset.del = k;
+    });
+    ingsWrap.querySelectorAll('.ing-edit-row')[at].querySelector('.ing-name-in').focus();
     saveDraftIfNew();
+  }
+  const addIngBtn = view.querySelector('#f-add-ing');
+  addIngBtn.addEventListener('click', () => {
+    const last = ingsWrap.querySelector('.ing-edit-row:last-child');
+    // poslední řádek je ještě prázdný -> jen do něj skočit, nezakládat další
+    if (last && !last.querySelector('.ing-name-in').value && !last.querySelector('.ing-qty-in').value) {
+      last.querySelector('.ing-name-in').focus();
+      return;
+    }
+    insertIngRow(ings.length - 1);
+  });
+  // Klepnutí na „Přidat" nesmí vzít zaostření poli, ve kterém se píše (jinak
+  // klávesnice na mobilu sjede dolů) — stejný trik jako u nákupního seznamu.
+  ['mousedown', 'pointerdown'].forEach(ev => addIngBtn.addEventListener(ev, e => {
+    if (ingsWrap.contains(document.activeElement)) e.preventDefault();
+  }));
+  // Enter: v množství skočí na název, v názvu založí další ingredienci pod ní.
+  ingsWrap.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    const row = e.target.closest('.ing-edit-row');
+    if (!row) return;
+    e.preventDefault();
+    if (e.target.classList.contains('ing-qty-in')) { row.querySelector('.ing-name-in').focus(); return; }
+    if (!e.target.classList.contains('ing-name-in')) return;
+    const idx = +row.dataset.idx;
+    const next = ingsWrap.querySelectorAll('.ing-edit-row')[idx + 1];
+    // prázdný řádek pod tímhle už je -> stačí do něj skočit
+    if (next && !next.querySelector('.ing-name-in').value && !next.querySelector('.ing-qty-in').value) {
+      next.querySelector('.ing-name-in').focus();
+      return;
+    }
+    if (!e.target.value.trim()) return;   // z prázdného řádku další nezakládat
+    insertIngRow(idx);
   });
   ingsWrap.addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
@@ -2944,13 +2989,23 @@ function renderEditorPage(editId) {
     });
   }
   renderStepRows();
-  view.querySelector('#f-add-step').addEventListener('click', () => {
+  const addStepBtn = view.querySelector('#f-add-step');
+  addStepBtn.addEventListener('click', () => {
     syncStepsFromDom();
     steps.push('');
-    renderStepRows();
-    stepsWrap.querySelector('.step-edit-row:last-child textarea')?.focus();
+    // nový krok jen připojit (ne překreslit), ať psaní na mobilu nezavře klávesnici
+    stepsWrap.insertAdjacentHTML('beforeend', `
+      <div class="step-edit-row" data-idx="${steps.length - 1}">
+        <span class="step-num">${steps.length}</span>
+        <textarea class="form-textarea" placeholder="Popiš krok…"></textarea>
+        <button type="button" class="row-del" data-del="${steps.length - 1}" aria-label="Odebrat">✕</button>
+      </div>`);
+    stepsWrap.querySelector('.step-edit-row:last-child textarea').focus();
     saveDraftIfNew();
   });
+  ['mousedown', 'pointerdown'].forEach(ev => addStepBtn.addEventListener(ev, e => {
+    if (stepsWrap.contains(document.activeElement)) e.preventDefault();
+  }));
   stepsWrap.addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
     if (!del) return;
