@@ -68,7 +68,7 @@ getRedirectResult(auth)
     if (!res || !res.user) {
       alertDialog('Přihlášení se nedokončilo',
         'Prohlížeč kvůli ochraně soukromí zahodil rozdělané přihlášení přes Google. ' +
-        'Zkus to prosím znovu, nebo se přihlas e-mailem a heslem — to funguje vždycky.');
+        'Zkus to prosím znovu, nebo se přihlas e-mailem a heslem, to funguje vždycky.');
     }
   })
   .catch(e => { flagSet(false); alertDialog('Přihlášení se nepovedlo', errMsg(e)); });
@@ -93,7 +93,7 @@ function errMsg(e) {
     'auth/invalid-credential': 'Nesprávný e-mail nebo heslo.',
     'auth/wrong-password': 'Nesprávný e-mail nebo heslo.',
     'auth/user-not-found': 'Nesprávný e-mail nebo heslo.',
-    'auth/email-already-in-use': 'S tímhle e-mailem už účet existuje — zkus se rovnou přihlásit.',
+    'auth/email-already-in-use': 'S tímhle e-mailem už účet existuje. Zkus se rovnou přihlásit.',
     'auth/weak-password': 'Heslo musí mít alespoň 6 znaků.',
     'auth/too-many-requests': 'Příliš mnoho pokusů, zkus to za chvíli.',
     'auth/network-request-failed': 'Zkontroluj připojení k internetu.',

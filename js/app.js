@@ -280,7 +280,7 @@ async function subscribeGroups() {
     try { saved = localStorage.getItem(groupStoreKey()); } catch { /* soukromý režim */ }
     if (!has(state.activeGroup)) {
       // nikdy nevybráno, nebo mě ze skupiny právě odebrali
-      if (state.activeGroup && !first) toast('Ve skupině už nejsi — přepínám na tvou kuchařku');
+      if (state.activeGroup && !first) toast('Ve skupině už nejsi, přepínám na tvou kuchařku');
       switchGroup(pendingShareGroup && has(pendingShareGroup) ? pendingShareGroup : has(saved) ? saved : personalGroupId());
     } else if (currentRoute?.page === 'settings') {
       renderSettingsPage();
@@ -1373,6 +1373,20 @@ function render() {
   view.classList.remove('page-enter');
   void view.offsetWidth;   // restart animace
   view.classList.add('page-enter');
+  /* Třída nájezdu po doběhnutí zmizí — jinak by se postupný nájezd řádků spouštěl
+     znovu při každém živém překreslení (třeba při psaní do hledání). */
+  clearTimeout(pageEnterTimer);
+  pageEnterTimer = setTimeout(() => view.classList.remove('page-enter'), 700);
+}
+let pageEnterTimer = 0;
+
+// Krátké „vyskočení" fajfky jen při odškrtnutí rukou — ne při každém vykreslení
+// už odškrtnutých položek (to by poskakovaly všechny najednou).
+function popOnce(el) {
+  el.classList.remove('pop');
+  void el.offsetWidth;
+  el.classList.add('pop');
+  setTimeout(() => el.classList.remove('pop'), 450);
 }
 
 // Reaguje na hashchange (klik na odkaz) i popstate (tlačítko Zpět / gesto swipe
@@ -1860,7 +1874,7 @@ function renderDetailPage(id) {
         <ul class="ing-list">
           ${ings.map(i => `
             <li>
-              <span class="ing-qty">${escapeHtml(qtyLabel(i, mult)) || '&nbsp;'}</span>
+              <span class="ing-qty">${escapeHtml(qtyLabel(i, mult, { hideCount: true })) || '&nbsp;'}</span>
               <span>${escapeHtml(i.name)}</span>
             </li>`).join('')}
         </ul>
@@ -1928,11 +1942,11 @@ function renderDetailPage(id) {
   function refreshPortions() {
     const m = currentMult();
     portionsById.set(id, detailPortions);
-    if (portVal) portVal.textContent = detailPortions;
+    if (portVal) { portVal.textContent = detailPortions; popOnce(portVal); }
     qtyCells.forEach((cell, idx) => {
       const i = ings[idx];
       if (!i) return;
-      cell.textContent = qtyLabel(i, m) || '\u00a0';
+      cell.textContent = qtyLabel(i, m, { hideCount: true }) || '\u00a0';
     });
   }
   view.querySelector('#port-minus')?.addEventListener('click', () => {
@@ -1976,6 +1990,7 @@ function renderDetailPage(id) {
       done ? set.delete(i) : set.add(i);
       setCheckedSteps(id, set);
       btn.classList.toggle('done', !done);
+      if (!done) popOnce(btn);
       btn.querySelector('.step-num').textContent = !done ? '✓' : i + 1;
       refreshStepsReset(set.size);
     });
@@ -2371,6 +2386,7 @@ function wireShoppingItems(root) {
       it.done = !it.done;
       saveShopping();
       row.classList.toggle('done', it.done);
+      if (it.done) popOnce(row);
       row.querySelector('.shop-check-dot').innerHTML = it.done ? checkSvg : '';
       row.querySelector('.shop-check').setAttribute('aria-label', it.done ? 'Vrátit' : 'Koupeno');
       updateShopHead();
@@ -3309,7 +3325,7 @@ function openCategoryEditor(existingName, onDone) {
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Emoji <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(nepovinné — jinak písmeno)</span></label>
+        <label class="form-label">Emoji <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(nepovinné, jinak písmeno)</span></label>
         <div class="emoji-row">
           <button type="button" class="emoji-trigger" id="ce-emoji-btn"></button>
           <button type="button" class="btn btn-sm" id="ce-emoji-clear">Písmeno</button>
@@ -3644,7 +3660,7 @@ function renderSettingsPage() {
       const gid = await createGroup(name);
       hideLoader();
       switchGroup(gid);
-      toast('Skupina vytvořena — pošli ostatním její kód');
+      toast('Skupina vytvořena. Pošli ostatním její kód.');
     } catch (e) { console.error(e); hideLoader(); alertDialog('Nepovedlo se', 'Skupinu se nepodařilo vytvořit.'); }
   });
   view.querySelector('#grp-join')?.addEventListener('click', promptJoinGroup);
@@ -4165,7 +4181,7 @@ function renderGamePage() {
       // v title a v aria-label kvůli čtečkám.
       const compact = chips.length >= 3;
       elActive.innerHTML = chips.map(c => `
-        <span class="gm-chip" title="${escapeHtml(c.p.name)} — ${escapeHtml(c.p.desc)}"
+        <span class="gm-chip" title="${escapeHtml(c.p.name)}: ${escapeHtml(c.p.desc)}"
               aria-label="${escapeHtml(c.p.name)}${c.left !== null ? `, zbývá ${c.left} otočky` : ', čeká na chybu'}">
           ${c.p.icon}
           ${compact ? '' : `<span class="gm-chip-name">${escapeHtml(c.p.name)}</span>`}
@@ -4181,7 +4197,7 @@ function renderGamePage() {
         const id = S.slots[i];
         if (!id) return `<div class="gm-slot is-empty" aria-hidden="true"></div>`;
         const p = POWERUPS[id];
-        return `<button type="button" class="gm-slot" data-slot="${i}" title="${escapeHtml(p.desc)}" aria-label="${escapeHtml(p.name)} — ${escapeHtml(p.desc)}">
+        return `<button type="button" class="gm-slot" data-slot="${i}" title="${escapeHtml(p.desc)}" aria-label="${escapeHtml(p.name)}: ${escapeHtml(p.desc)}">
           <span class="gm-slot-glyph">${p.icon}</span><span class="gm-slot-name">${escapeHtml(p.name)}</span>
         </button>`;
       }).join('');
@@ -4403,7 +4419,7 @@ function startGuestMode() {
   guestDemoFallback = true;
   DEMO = true;
   hideAuthGate();
-  showGuestBanner('Ukázková data — přihlas se a založ si vlastní kuchařku', 'Přihlásit se');
+  showGuestBanner('Ukázková data. Přihlas se a založ si vlastní kuchařku.', 'Přihlásit se');
   renderProfileButtons();
   render();
   subscribe();
