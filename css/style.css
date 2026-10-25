@@ -1056,7 +1056,8 @@ button.settings-row:active{background-color:var(--accent-soft)}
 
 /* ============ Modal ============ */
 .modal-backdrop{
-  position:fixed;inset:0;z-index:250;background:rgba(25,15,8,.42);
+  /* nad přihlašovací bránou (600) — chyby a dotazy musí být vidět i tam */
+  position:fixed;inset:0;z-index:700;background:rgba(25,15,8,.42);
   display:flex;align-items:center;justify-content:center;padding:28px;
   animation:fadeIn .18s;
 }
@@ -1077,7 +1078,7 @@ button.settings-row:active{background-color:var(--accent-soft)}
 
 /* ============ Toast ============ */
 .toast-root{
-  position:fixed;left:0;right:0;top:calc(var(--safe-top) + 12px);z-index:400;
+  position:fixed;left:0;right:0;top:calc(var(--safe-top) + 12px);z-index:800;
   display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;
 }
 .toast{
@@ -1093,7 +1094,7 @@ button.settings-row:active{background-color:var(--accent-soft)}
 
 /* ============ Loader ============ */
 .loader-backdrop{
-  position:fixed;inset:0;z-index:500;background:rgba(25,15,8,.3);
+  position:fixed;inset:0;z-index:750;background:rgba(25,15,8,.3);
   display:flex;align-items:center;justify-content:center;
   -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
   /* krátká operace (pod ~0,15 s) se vůbec neukáže — žádné probliknutí */
@@ -1153,6 +1154,9 @@ button.settings-row:active{background-color:var(--accent-soft)}
   color:var(--text-2);transition:background-color var(--t-med) var(--ease-out),color var(--t-med),box-shadow var(--t-med);
 }
 .auth-tabs button.active{background:var(--bg-elev);color:var(--text);box-shadow:var(--shadow-s)}
+.auth-note{font-size:13px;color:var(--text-2);text-align:center;margin:-8px 0 20px;line-height:1.5}
+.auth-note-warn{color:var(--danger)}
+.auth-switch:disabled{color:var(--text-3)}
 .auth-switch{
   display:block;width:100%;text-align:center;margin-top:14px;font-size:13.5px;font-weight:650;color:var(--accent);
 }

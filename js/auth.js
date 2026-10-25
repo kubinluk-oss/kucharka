@@ -230,8 +230,13 @@ function renderForm(mode) {
         if (!name) { nameEl.focus(); submit.disabled = false; return; }
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name });
-        await sendEmailVerification(cred.user);
-        renderVerify();
+        // Účet už existuje — i kdyby odeslání e-mailu selhalo, patří uživatel na
+        // obrazovku ověření (odtud ho může poslat znovu), ne zpátky do formuláře,
+        // kde by druhý pokus skončil hláškou „účet už existuje".
+        let sent = true;
+        try { await sendVerification(cred.user); resendReadyAt = Date.now() + RESEND_WAIT * 1000; }
+        catch (e) { sent = false; console.error('verify mail:', e); }
+        renderVerify(sent ? '' : 'Ověřovací e-mail se nepodařilo odeslat. Zkus „Poslat znovu".');
       } else {
         await persistenceReady;
         await signInWithEmailAndPassword(auth, email, password);
@@ -244,27 +249,57 @@ function renderForm(mode) {
   });
 }
 
-function renderVerify() {
+// Odkaz v e-mailu vede po potvrzení zpátky do appky (tlačítko „Pokračovat").
+function sendVerification(user) {
+  return sendEmailVerification(user, { url: location.origin + location.pathname });
+}
+
+const RESEND_WAIT = 60;   // Firebase další e-mail hned po prvním odmítne (too-many-requests)
+let resendReadyAt = 0;
+
+function renderVerify(note = '') {
   const email = auth.currentUser?.email || '';
   gate.innerHTML = `
     <div class="auth-wrap">
       <div class="auth-card">
         <div class="auth-brand">Kuchařka<span>.</span></div>
         <h2 class="auth-title">Potvrď e-mail</h2>
-        <p class="auth-lead">Poslali jsme ověřovací odkaz na <b>${escapeHtml(email)}</b>. Otevři ho a pak se appka sama odemkne.</p>
+        <p class="auth-lead">Poslali jsme ověřovací odkaz na <b>${escapeHtml(email)}</b>. Otevři ho a pak klepni na tlačítko níže.</p>
+        <p class="auth-note">Nevidíš ho? Podívej se do spamu nebo hromadné pošty. Odesílatel je <b>noreply@kucharka-c4a3f.firebaseapp.com</b>.</p>
+        ${note ? `<p class="auth-note auth-note-warn">${escapeHtml(note)}</p>` : ''}
         <button class="btn btn-primary btn-block" id="auth-recheck">Už jsem potvrdil/a</button>
         <button class="link-btn auth-switch" id="auth-resend">Poslat znovu</button>
         <button class="link-btn auth-switch" id="auth-signout">Odhlásit se</button>
       </div>
     </div>`;
+  const resend = gate.querySelector('#auth-resend');
+  // odpočet do dalšího možného odeslání, ať tlačítko nevypadá mrtvé
+  const tick = () => {
+    if (!resend.isConnected) return;
+    const left = Math.ceil((resendReadyAt - Date.now()) / 1000);
+    resend.disabled = left > 0;
+    resend.textContent = left > 0 ? `Poslat znovu (za ${left} s)` : 'Poslat znovu';
+    if (left > 0) setTimeout(tick, 1000);
+  };
+  tick();
   gate.querySelector('#auth-recheck').addEventListener('click', async () => {
     try { await auth.currentUser.reload(); } catch { /* ignore */ }
     if (auth.currentUser?.emailVerified) location.reload();
-    else toast('E-mail ještě není potvrzený');
+    else alertDialog('Ještě nepotvrzeno', 'E-mail zatím není potvrzený. Otevři odkaz z e-mailu a zkus to znovu.');
   });
-  gate.querySelector('#auth-resend').addEventListener('click', async () => {
-    try { await sendEmailVerification(auth.currentUser); toast('Odesláno znovu'); }
-    catch (e) { alertDialog('Nepovedlo se', errMsg(e)); }
+  resend.addEventListener('click', async () => {
+    resend.disabled = true;
+    try {
+      await sendVerification(auth.currentUser);
+      toast('E-mail odeslán znovu');
+      resendReadyAt = Date.now() + RESEND_WAIT * 1000;
+    } catch (e) {
+      if (e.code === 'auth/too-many-requests') resendReadyAt = Date.now() + RESEND_WAIT * 1000;
+      alertDialog('Nepovedlo se', e.code === 'auth/too-many-requests'
+        ? 'E-mail jsme posílali před chvílí. Další můžeš poslat za minutu.'
+        : errMsg(e));
+    }
+    tick();
   });
   gate.querySelector('#auth-signout').addEventListener('click', () => signOut(auth));
 }
