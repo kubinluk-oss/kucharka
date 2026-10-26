@@ -171,12 +171,80 @@ function unsubscribeAll() { unsubscribeGroup(); unsubs.forEach(u => u()); unsubs
 
 // Cesty k datům AKTIVNÍ skupiny: groups/{gid}/recipes/…, groups/{gid}/meta/…
 const gdoc = (...path) => doc(db, 'groups', state.activeGroup, ...path);
+// Kopie receptu, se kterou se pracuje (hodnocení, sdílení). V „Moje kuchařka" může
+// recept pocházet z jiné skupiny — `_gid` říká z které.
+const recipeRef = r => doc(db, 'groups', r._gid || state.activeGroup, 'recipes', r.id);
+// Ve kterých MÝCH skupinách recept je (může být ve víc najednou).
+function recipeGroupsOf(r) {
+  const mine = id => state.groups.some(g => g.id === id);
+  const list = (r._gids || r.groups || []).filter(mine);
+  return list.length ? list : [r._gid || state.activeGroup];
+}
+// „Moje kuchařka" = souhrn receptů ze všech mých skupin (viz subscribeAggregate).
+const aggregateMode = () => !DEMO && !!state.activeGroup && state.activeGroup === personalGroupId();
+// Kategorie se upravují jen v konkrétní skupině; v souhrnu z víc skupin ne
+// (spojený seznam není uložený nikde, kam by šlo zapsat).
+const categoriesEditable = () => !aggregateMode() || state.groups.length <= 1;
 
 function subscribe() {
   unsubscribeAll();
   if (DEMO) { loadDemoData(); return; }
   subscribeShopping();
   subscribeGroups();
+}
+
+/* „Moje kuchařka": recepty ze VŠECH mých skupin dohromady. Recept, který je ve víc
+   skupinách, se ukáže jen jednou (spojuje se podle id); `_gid` je kopie, se kterou
+   se pracuje (přednost má osobní), `_gids` všechny skupiny, kde je. Kategorie se
+   stejným názvem se spojí, vzhled kategorií a profilovky taky. */
+let aggregateKey = '';
+function subscribeAggregate() {
+  const gids = state.groups.length ? state.groups.map(g => g.id) : [personalGroupId()];
+  aggregateKey = gids.join(',');
+  const recipes = {};
+  const meta = Object.fromEntries(gids.map(g => [g, {}]));
+  const merge = () => {
+    if (!gids.every(g => recipes[g])) return;   // čekáme, až dorazí recepty všech skupin
+    const byId = new Map();
+    gids.forEach(gid => recipes[gid].forEach(r => {
+      const have = byId.get(r.id);
+      if (have) have._gids.push(gid);
+      else byId.set(r.id, { ...r, _gid: gid, _gids: [gid] });
+    }));
+    const cats = [], styles = {}, avatars = {}, profiles = [];
+    gids.forEach(gid => {
+      const m = meta[gid];
+      (m.categories || DEFAULT_CATS).forEach(c => { if (!cats.includes(c)) cats.push(c); });
+      Object.entries(m.catStyles || {}).forEach(([k, v]) => { if (!(k in styles)) styles[k] = v; });
+      Object.assign(avatars, m.avatarPhotos || {});
+      (m.profiles || []).forEach(n => { if (!profiles.includes(n)) profiles.push(n); });
+    });
+    if (myName() && !profiles.includes(myName())) profiles.push(myName());
+    Object.assign(state, { recipes: [...byId.values()], categories: cats, catStyles: styles, avatarPhotos: avatars, profiles, loaded: true });
+    loadError = '';
+    clearTimeout(loadTimer);
+    renderProfileButtons();
+    onDataChanged();
+  };
+  const field = { categories: 'list', catStyles: 'map', avatarPhotos: 'map', profiles: 'list' };
+  gids.forEach(gid => {
+    Object.entries(field).forEach(([name, key]) => listen(doc(db, 'groups', gid, 'meta', name), d => {
+      meta[gid][name] = d.exists() ? d.data()[key] : undefined;
+      merge();
+    }, err => console.error(name + ' sync:', err), groupUnsubs));
+    listen(collection(db, 'groups', gid, 'recipes'), snap => {
+      recipes[gid] = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      merge();
+    }, err => {
+      console.error('recipes sync:', gid, err);
+      recipes[gid] = [];   // nedostupná skupina nesmí zablokovat zbytek
+      merge();
+    }, groupUnsubs);
+  });
+  // žebříček minihry patří osobní kuchařce
+  listen(doc(db, 'groups', personalGroupId(), 'meta', 'highScores'), d => {
+    state.highScores = (d.exists() && d.data().map) ? d.data().map : {};
+  }, err => console.error('highScores sync:', err), groupUnsubs);
 }
 
 // Data jedné skupiny. Struktura dokumentů je stejná jako dřív u jediné společné
@@ -308,6 +376,8 @@ async function subscribeGroups() {
       // nikdy nevybráno, nebo mě ze skupiny právě odebrali
       if (state.activeGroup && !first) toast('Ve skupině už nejsi, přepínám na tvou kuchařku');
       switchGroup(pendingShareGroup && has(pendingShareGroup) ? pendingShareGroup : has(saved) ? saved : personalGroupId());
+    } else if (aggregateMode() && state.groups.map(g => g.id).join(',') !== aggregateKey) {
+      switchGroup(personalGroupId());   // přibyla/ubyla skupina -> souhrn sestavit znovu
     } else if (currentRoute?.page === 'settings') {
       renderSettingsPage();
     }
@@ -334,7 +404,8 @@ function switchGroup(gid) {
   profilesLoaded = false;
   profilesAutoCreated = false;
   portionsById.clear();
-  subscribeGroupData(gid);
+  if (gid === personalGroupId()) subscribeAggregate();
+  else subscribeGroupData(gid);
   onDataChanged();   // zahodí schované stránky a překreslí aktuální (zatím kostrou načítání)
 }
 
@@ -436,8 +507,8 @@ async function deleteOwnPhoto(url, gid = state.activeGroup) {
 // původní recept později smazal, kopie o ni nepřijde.
 async function copyRecipeToGroup(r, gid) {
   const id = uid();
-  const { id: _id, _match, updatedAt, ...rest } = r;
-  const data = { ...rest, reviews: [], shared: false, authorUid: currentUid(), createdAt: Date.now() };
+  const { id: _id, _match, _gid, _gids, groups, updatedAt, ...rest } = r;
+  const data = { ...rest, groups: [gid], reviews: [], shared: false, authorUid: currentUid(), createdAt: Date.now() };
   if (r.photo && r.photo.startsWith('http')) {
     try {
       const blob = await (await fetch(r.photo)).blob();
@@ -450,15 +521,7 @@ async function copyRecipeToGroup(r, gid) {
     } catch (e) { console.error('copy photo:', e); /* necháme odkaz na původní fotku */ }
   }
   await setDoc(doc(db, 'groups', gid, 'recipes', id), data);
-  // kategorie, které cílová skupina nemá, do ní doplníme
-  const cats = recipeCategories(r);
-  if (cats.length) {
-    const cref = doc(db, 'groups', gid, 'meta', 'categories');
-    const cd = await getDoc(cref);
-    const list = (cd.exists() && cd.data().list) ? cd.data().list : [...DEFAULT_CATS];
-    const missing = cats.filter(c => !list.includes(c));
-    if (missing.length || !cd.exists()) await setDoc(cref, { list: [...list, ...missing] });
-  }
+  await ensureCategoriesIn(gid, recipeCategories(r));
 }
 
 // Moje jméno ve všech skupinách (seznam členů v Nastavení).
@@ -725,7 +788,11 @@ async function uploadPhoto(path, dataUrl) {
   return getDownloadURL(photoRef);
 }
 
-async function saveRecipe(recipe) {
+/* Uloží recept z editoru do vybraných skupin (`targets`; bez nich tam, kde už je).
+   Recept je ve všech skupinách POD STEJNÝM id a obsah se propisuje všude; hodnocení
+   ale patří každé skupině zvlášť, takže se při úpravě nepřepisují. Ze skupin, které
+   už vybrané nejsou, se recept odebere. */
+async function saveRecipe(recipe, { targets } = {}) {
   if (DEMO) {
     const i = state.recipes.findIndex(r => r.id === recipe.id);
     if (i >= 0) state.recipes[i] = recipe; else state.recipes.push(recipe);
@@ -734,13 +801,24 @@ async function saveRecipe(recipe) {
   }
   showLoader('Ukládám…');
   try {
-    const data = { ...recipe };
-    const id = data.id;
-    delete data.id;
+    const { id, _gid, _gids, _match, ...data } = recipe;
+    const existing = getRecipe(id);
+    const present = existing ? recipeGroupsOf(existing) : [];
+    const to = targets && targets.length ? targets : (present.length ? present : [state.activeGroup]);
     if (data.photo && data.photo.startsWith('data:')) {
-      data.photo = await uploadPhoto(`groups/${state.activeGroup}/photos/${id}.jpg`, data.photo);
+      data.photo = await uploadPhoto(`groups/${to[0]}/photos/${id}.jpg`, data.photo);
     }
-    await setDoc(gdoc('recipes', id), data);
+    data.groups = to;
+    const { reviews, ...content } = data;
+    const b = writeBatch(db);
+    to.forEach(gid => {
+      const ref = doc(db, 'groups', gid, 'recipes', id);
+      if (present.includes(gid)) b.set(ref, content, { merge: true });   // hodnocení zůstávají
+      else b.set(ref, { ...content, reviews: [] });
+    });
+    present.filter(gid => !to.includes(gid)).forEach(gid => b.delete(doc(db, 'groups', gid, 'recipes', id)));
+    await b.commit();
+    await Promise.all(to.map(gid => ensureCategoriesIn(gid, recipeCategories(data))));
     hideLoader();
     return true;
   } catch (e) {
@@ -751,6 +829,34 @@ async function saveRecipe(recipe) {
   }
 }
 
+// Změna jen v kopii, se kterou se pracuje — hodnocení, sdílení odkazem. Smí ji udělat
+// i člen, který recept nenapsal (pravidla mu povolí jen tyhle položky).
+async function updateRecipeCopy(r, fields) {
+  if (DEMO) {
+    Object.assign(getRecipe(r.id) || {}, fields);
+    onDataChanged();
+    return true;
+  }
+  try {
+    await updateDoc(recipeRef(r), fields);
+    return true;
+  } catch (e) {
+    console.error('update recipe:', e);
+    await alertDialog('Chyba při ukládání', 'Změnu se nepodařilo uložit. Zkontroluj připojení.');
+    return false;
+  }
+}
+
+// Kategorie receptu, které cílová skupina nemá, do ní doplníme.
+async function ensureCategoriesIn(gid, cats) {
+  if (!cats.length) return;
+  const cref = doc(db, 'groups', gid, 'meta', 'categories');
+  const cd = await getDoc(cref);
+  const list = (cd.exists() && cd.data().list) ? cd.data().list : [...DEFAULT_CATS];
+  const missing = cats.filter(c => !list.includes(c));
+  if (missing.length || !cd.exists()) await setDoc(cref, { list: [...list, ...missing] });
+}
+
 async function deleteRecipe(id) {
   if (DEMO) {
     state.recipes = state.recipes.filter(r => r.id !== id);
@@ -759,10 +865,13 @@ async function deleteRecipe(id) {
   }
   showLoader('Mažu…');
   try {
-    const photo = getRecipe(id)?.photo || '';
-    // nejdřív recept, pak fotka — při selhání by jinak zůstal recept s rozbitou fotkou
-    await deleteDoc(gdoc('recipes', id));
-    await deleteOwnPhoto(photo);
+    const r = getRecipe(id);
+    const gids = r ? recipeGroupsOf(r) : [state.activeGroup];
+    // nejdřív recept (ze všech skupin), pak fotka — jinak by zůstal recept s rozbitou fotkou
+    const b = writeBatch(db);
+    gids.forEach(gid => b.delete(doc(db, 'groups', gid, 'recipes', id)));
+    await b.commit();
+    await Promise.all(gids.map(gid => deleteOwnPhoto(r?.photo || '', gid)));
     hideLoader();
     return true;
   } catch (e) {
@@ -811,7 +920,7 @@ async function renameProfileEverywhere(oldName, newName) {
         upd.reviews = r.reviews.map(rv => rv.author === oldName ? { ...rv, author: newName } : rv);
         changed = true;
       }
-      if (changed) { batch.update(gdoc('recipes', r.id), upd); dirty++; }
+      if (changed) { batch.update(recipeRef(r), upd); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -853,7 +962,7 @@ async function deleteCategoryEverywhere(cat) {
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
-      if (recipeCategories(r).includes(cat)) { batch.update(gdoc('recipes', r.id), withoutCategory(r, cat)); dirty++; }
+      if (recipeCategories(r).includes(cat)) { batch.update(recipeRef(r), withoutCategory(r, cat)); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -885,7 +994,7 @@ async function renameCategoryEverywhere(oldName, newName) {
     const batch = writeBatch(db);
     let dirty = 0;
     state.recipes.forEach(r => {
-      if (recipeCategories(r).includes(oldName)) { batch.update(gdoc('recipes', r.id), withRenamedCategory(r, oldName, newName)); dirty++; }
+      if (recipeCategories(r).includes(oldName)) { batch.update(recipeRef(r), withRenamedCategory(r, oldName, newName)); dirty++; }
     });
     if (dirty) await batch.commit();
     hideLoader();
@@ -1685,7 +1794,8 @@ function renderCatsPage() {
           <span class="ct-count">${noneCount}</span>
         </a>` : ''}
     </div>
-    <button class="ghost-btn" id="cats-manage">Upravit kategorie</button>`;
+    ${categoriesEditable() ? '<button class="ghost-btn" id="cats-manage">Upravit kategorie</button>'
+      : '<p class="settings-hint">Tady vidíš kategorie ze všech svých kuchařek. Upravit je můžeš po přepnutí do konkrétní skupiny v Nastavení.</p>'}`;
   view.querySelector('#cats-manage')?.addEventListener('click', openCategoryManager);
   renderProfileButtons();
 }
@@ -2098,7 +2208,7 @@ function renderDetailPage(id) {
       if (!ok) return;
       const fresh = getRecipe(id);
       if (!fresh) return;
-      await saveRecipe({ ...fresh, reviews: (fresh.reviews || []).filter(rv => rv.id !== btn.dataset.delReview) });
+      await updateRecipeCopy(fresh, { reviews: (fresh.reviews || []).filter(rv => rv.id !== btn.dataset.delReview) });
     });
   });
 }
@@ -2730,7 +2840,8 @@ function shoppingListPlainText() {
 // Odkaz nese i skupinu (?g=…), recept leží pod groups/{gid}/recipes. Staré odkazy
 // bez ?g míří do původní společné kuchařky (kolekce `recipes`).
 function shareUrl(r) {
-  const g = state.activeGroup ? '?g=' + encodeURIComponent(state.activeGroup) : '';
+  const gid = r._gid || state.activeGroup;
+  const g = gid ? '?g=' + encodeURIComponent(gid) : '';
   return location.origin + location.pathname + g + '#/recept/' + encodeURIComponent(r.id);
 }
 // Karta sdílení: nahoře kopie do jiné mé kuchařky (skupiny), dole veřejný odkaz
@@ -2781,7 +2892,7 @@ function openShareSheet(r) {
       const fresh = getRecipe(r.id);
       if (!fresh) return;
       const next = !shared;
-      if (!await saveRecipe({ ...fresh, shared: next })) return;
+      if (!await updateRecipeCopy(fresh, { shared: next })) return;
       linkBox.innerHTML = linkHtml(next);
       wire(next);
       toast(next ? 'Recept jde teď otevřít bez přihlášení' : 'Sdílení vypnuto');
@@ -2818,15 +2929,12 @@ function openReviewForm(r) {
     if (!picker.value) { toast('Vyber počet hvězdiček'); return; }
     const fresh = getRecipe(r.id);
     if (!fresh) { sheet.close(); return; }
-    const updated = {
-      ...fresh,
-      reviews: [...(fresh.reviews || []), {
-        id: uid(), author, authorUid: currentUid() || '', stars: picker.value,
-        comment: sheet.body.querySelector('#rev-comment').value.trim(),
-        createdAt: Date.now(),
-      }]
-    };
-    if (await saveRecipe(updated)) { sheet.close(); toast('Díky za hodnocení'); }
+    const reviews = [...(fresh.reviews || []), {
+      id: uid(), author, authorUid: currentUid() || '', stars: picker.value,
+      comment: sheet.body.querySelector('#rev-comment').value.trim(),
+      createdAt: Date.now(),
+    }];
+    if (await updateRecipeCopy(fresh, { reviews })) { sheet.close(); toast('Díky za hodnocení'); }
   });
 }
 
@@ -2875,6 +2983,9 @@ function renderEditorPage(editId) {
   const ings = (r.ingredients && r.ingredients.length) ? r.ingredients.map(i => ({ ...i })) : [{ qty: '', unit: '—', name: '' }];
   const steps = (r.steps && r.steps.length) ? [...r.steps] : [''];
   let selectedCats = (draft?.categories) || recipeCategories(r);
+  // Do kterých kuchařek se recept uloží (výběr jen když jich mám víc).
+  const pickGroups = !DEMO && state.groups.length > 1;
+  let selectedGroups = isNew ? [state.activeGroup] : recipeGroupsOf(r);
 
   view.innerHTML = `
   <div class="page-narrow">
@@ -2898,6 +3009,12 @@ function renderEditorPage(editId) {
         <span class="field-value" id="f-cat-value"></span>
         <span class="row-chevron">${ICON.chevron}</span>
       </button>
+      ${pickGroups ? `
+      <button type="button" class="field-row" id="f-grp-row">
+        <span class="field-label">Kuchařky</span>
+        <span class="field-value" id="f-grp-value"></span>
+        <span class="row-chevron">${ICON.chevron}</span>
+      </button>` : ''}
       <div class="field-row">
         <span class="field-label">Autor</span>
         <span class="field-value">${escapeHtml(isNew ? myName() : (r.author || myName()))}</span>
@@ -3131,6 +3248,16 @@ function renderEditorPage(editId) {
     openCategoryPicker(selectedCats, next => { selectedCats = next; refreshCatValue(); saveDraftIfNew(); });
   });
 
+  /* — kuchařky (víc najednou) — */
+  const grpValueEl = view.querySelector('#f-grp-value');
+  function refreshGrpValue() {
+    if (grpValueEl) grpValueEl.textContent = selectedGroups.map(groupLabel).join(', ');
+  }
+  refreshGrpValue();
+  view.querySelector('#f-grp-row')?.addEventListener('click', () => {
+    openGroupsPicker(selectedGroups, next => { selectedGroups = next; refreshGrpValue(); });
+  });
+
   /* — uložení — */
   view.querySelector('#f-save').addEventListener('click', async () => {
     const name = view.querySelector('#f-name').value.trim();
@@ -3158,13 +3285,52 @@ function renderEditorPage(editId) {
       createdAt: isNew ? Date.now() : (r.createdAt || Date.now()),
       ...(isNew ? {} : { updatedAt: Date.now() }),
     };
-    if (await saveRecipe(data)) {
+    if (await saveRecipe(data, { targets: pickGroups ? selectedGroups : undefined })) {
       if (isNew) clearRecipeDraft();
       toast(isNew ? 'Recept přidán' : 'Změny uloženy');
       portionsById.delete(data.id); // počet porcí se mohl změnit -> začni od nového
-      location.hash = '#/recept/' + data.id;
+      // Recept uložený jen do jiné kuchařky tady nebude vidět — nechodit na prázdný detail.
+      const visibleHere = aggregateMode() || !pickGroups || selectedGroups.includes(state.activeGroup);
+      location.hash = visibleHere ? '#/recept/' + data.id : '#/';
     }
   });
+}
+
+// Název kuchařky pro výběr v editoru (osobní se vždycky jmenuje stejně).
+function groupLabel(gid) {
+  const g = state.groups.find(x => x.id === gid);
+  return g?.personal ? 'Moje kuchařka' : (g?.name || 'Kuchařka');
+}
+
+// Výběr kuchařek, do kterých recept patří — víc najednou, aspoň jedna.
+function openGroupsPicker(initial, onChange) {
+  const selected = new Set(initial);
+  const sheet = openSheet({ title: 'Kuchařky', bodyHtml: '' });
+  function draw() {
+    sheet.body.innerHTML = `
+      <p class="muted share-note">Recept bude ve všech vybraných kuchařkách. Když ho později upravíš, změna se projeví všude.</p>
+      <div class="settings-card">
+        ${state.groups.map(g => `
+          <button type="button" class="settings-row" data-gid="${escapeHtml(g.id)}">
+            <span class="grp-text row-label">
+              <span class="grp-name">${escapeHtml(groupLabel(g.id))}</span>
+              <span class="grp-sub">${g.personal ? 'jen pro tebe' : memberCountText((g.members || []).length)}</span>
+            </span>
+            ${selected.has(g.id) ? checkAccentSvg : ''}
+          </button>`).join('')}
+      </div>`;
+    sheet.body.querySelectorAll('[data-gid]').forEach(b => b.addEventListener('click', () => {
+      const gid = b.dataset.gid;
+      if (selected.has(gid)) {
+        if (selected.size === 1) { toast('Recept musí být aspoň v jedné kuchařce'); return; }
+        selected.delete(gid);
+      } else selected.add(gid);
+      // pořadí jako v seznamu kuchařek (osobní první)
+      onChange(state.groups.map(g => g.id).filter(id => selected.has(id)));
+      draw();
+    }));
+  }
+  draw();
 }
 
 // Výběr více kategorií pro recept: seznam s fajfkou u vybraných (klepnutí přepíná),
@@ -3675,7 +3841,7 @@ function renderSettingsPage() {
               <span class="grp-dot${g.id === state.activeGroup ? ' on' : ''}"></span>
               <span class="grp-text">
                 <span class="grp-name">${escapeHtml(g.name || 'Bez názvu')}</span>
-                <span class="grp-sub">${g.personal ? 'jen pro tebe' : memberCountText((g.members || []).length)}</span>
+                <span class="grp-sub">${g.personal ? (state.groups.length > 1 ? 'recepty ze všech kuchařek' : 'jen pro tebe') : memberCountText((g.members || []).length)}</span>
               </span>
             </button>
             ${g.personal ? '' : `
@@ -3689,15 +3855,16 @@ function renderSettingsPage() {
           <span class="row-label row-action">Připojit se kódem</span>
         </button>
       </div>
-      <p class="settings-hint">Každá kuchařka má vlastní recepty a kategorie. Kód skupiny pošli tomu, s kým chceš recepty sdílet.</p>
+      <p class="settings-hint">Každá skupina má vlastní recepty a kategorie, Moje kuchařka ukazuje recepty ze všech dohromady. Kód skupiny pošli tomu, s kým chceš recepty sdílet.</p>
     </div>` : ''}
 
     <div class="settings-group">
       <h3>Kuchařka</h3>
       <div class="settings-card">
+        ${categoriesEditable() ? `
         <button class="settings-row" id="set-cats">
           <span class="row-label">Spravovat kategorie</span><span class="row-chevron">${ICON.chevron}</span>
-        </button>
+        </button>` : ''}
         <button class="settings-row" id="set-feedback">
           <span class="row-label">Zpětná vazba</span><span class="row-chevron">${ICON.chevron}</span>
         </button>
