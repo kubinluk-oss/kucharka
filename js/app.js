@@ -1570,8 +1570,8 @@ function renderHome() {
           <button class="add-recipe-card arc-secondary" id="home-join">
             <span class="arc-plus">${peopleSvg}</span>
             <span class="arc-text">
-              <span class="arc-title">Připojit se ke skupině</span>
-              <span class="arc-sub">Máš kód od někoho ze skupiny?</span>
+              <span class="arc-title">Mám kód skupiny</span>
+              <span class="arc-sub">Připoj se a uvidíš její recepty</span>
             </span>
             <span class="arc-chev">${ICON.chevron}</span>
           </button>` : ''}
