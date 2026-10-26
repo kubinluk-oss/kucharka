@@ -220,6 +220,8 @@ function subscribeGroupData(gid) {
     state.recipes = [];
     snap.forEach(d => state.recipes.push({ ...d.data(), id: d.id }));
     state.loaded = true;
+    loadError = '';
+    clearTimeout(loadTimer);
     autoCreateProfiles();
     onDataChanged();
   }, err => {
@@ -270,7 +272,29 @@ async function ensurePersonalGroup() {
   });
 }
 
+/* Když se kuchařka nenačte (zamítnutý přístup, výpadek, dlouhé čekání), appka
+   nesmí donekonečna ukazovat „Načítám" — řekne, co se stalo, a nabídne opakování. */
+let loadError = '';
+let loadTimer = 0;
+function showLoadError(msg) {
+  if (state.loaded) return;
+  loadError = msg;
+  onDataChanged();
+}
+function loadErrorHtml() {
+  return `<div class="empty load-error">
+      <h3>Kuchařku se nepodařilo načíst</h3>
+      <p>${escapeHtml(loadError)}</p>
+      <button class="btn btn-primary" id="load-retry">Zkusit znovu</button>
+    </div>`;
+}
+
 async function subscribeGroups() {
+  loadError = '';
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(() => showLoadError(navigator.onLine
+    ? 'Načítání trvá nezvykle dlouho. Zkus to prosím znovu.'
+    : 'Jsi offline. Připoj se k internetu a zkus to znovu.'), 15000);
   try { await ensurePersonalGroup(); }
   catch (e) { console.error('personal group:', e); }
   let first = true;
@@ -288,7 +312,12 @@ async function subscribeGroups() {
       renderSettingsPage();
     }
     first = false;
-  }, err => console.error('groups sync:', err));
+  }, err => {
+    console.error('groups sync:', err);
+    showLoadError(err.code === 'permission-denied'
+      ? 'Firebase odmítl přístup k tvému účtu. Zkus se odhlásit a znovu přihlásit.'
+      : 'Nepodařilo se spojit s cloudem. Zkontroluj připojení k internetu.');
+  });
 }
 
 // Přepne appku na data jiné skupiny. Všechno, co patřilo té předchozí (recepty,
@@ -1390,7 +1419,7 @@ function render() {
     view.replaceChildren(...hotova);
     renderProfileButtons();     // jméno/fotka profilu se mezitím mohly změnit
   } else {
-    PAGES[currentRoute.page](currentRoute);
+    drawPage(currentRoute);
   }
   cachedKey = key;
   // Výpisy si pamatují, kam jsem doscrolloval; recept se ale otevírá vždy od začátku
@@ -1450,6 +1479,18 @@ const PAGES = {
   game: () => renderGamePage(),
 };
 
+// Stránky, které bez načtené kuchařky nemají co ukázat — při chybě načítání ji vypíšou.
+const NEEDS_DATA = ['home', 'cats', 'listing', 'search', 'detail'];
+function drawPage(route) {
+  if (loadError && !state.loaded && NEEDS_DATA.includes(route.page)) {
+    view.innerHTML = route.page === 'home' ? greetingRowHtml('Něco se pokazilo') + loadErrorHtml() : loadErrorHtml();
+    view.querySelector('#load-retry').addEventListener('click', () => location.reload());
+    wireViewAvatarButtons(); renderProfileButtons();
+    return;
+  }
+  PAGES[route.page](route);
+}
+
 /* Živá data dorazila -> obnovit aktuální stránku (šetrně, ať nezmizí rozepsaný text).
    Při startu přijde z cloudu několik dokumentů rychle po sobě (recepty, kategorie,
    vzhled, fotky…) a každý by stránku postavil znovu. Proto se překreslení slije do
@@ -1467,7 +1508,7 @@ function rerenderForData() {
   if (page === 'search') { updateSearchResults(); return; }
   if (page === 'editor' && editorMounted) return;       // nepřepisovat rozepsaný recept
   const y = window.scrollY;
-  PAGES[page](currentRoute);
+  drawPage(currentRoute);
   window.scrollTo(0, y);
   scheduleNavbar();
 }
@@ -4496,6 +4537,12 @@ if (DEMO) {
         started = live = true;
         Object.assign(state, { recipes: [], loaded: false, groups: [], activeGroup: null });
         render();
+        /* Čerstvě ověřený e-mail: uložený přihlašovací klíč o ověření ještě neví
+           (obnovuje se sám až po hodině) a pravidla Firestore by do té doby všechno
+           odmítala — kuchařka by se nenačetla. Klíč proto obnovíme hned. */
+        try {
+          if (user.emailVerified && !(await user.getIdTokenResult()).claims.email_verified) await user.getIdToken(true);
+        } catch { /* offline — zkusí se s tím, co je */ }
         subscribe();
       }
       return;

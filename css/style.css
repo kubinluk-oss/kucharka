@@ -1656,3 +1656,5 @@ body.public-view .navbar{display:none}
 
 /* — desktop: hlášky pod horní navigací — */
 @media(min-width:1024px){.toast-root{top:84px}}
+/* chyba načítání kuchařky */
+.load-error .btn{margin-top:4px}
