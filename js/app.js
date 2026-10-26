@@ -1571,7 +1571,7 @@ function renderHome() {
             <span class="arc-plus">${peopleSvg}</span>
             <span class="arc-text">
               <span class="arc-title">Připojit se ke skupině</span>
-              <span class="arc-sub">Máš 6místný kód? Uvidíš recepty celé skupiny</span>
+              <span class="arc-sub">Máš kód od někoho ze skupiny?</span>
             </span>
             <span class="arc-chev">${ICON.chevron}</span>
           </button>` : ''}
