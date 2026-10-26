@@ -1516,8 +1516,6 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 .shop-pick{margin-bottom:14px;background:var(--bg-elev2);box-shadow:none}
 .shop-pick-row{cursor:pointer}
 .shop-pick-row input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0;margin:0}
-.empty-join{margin-top:18px;font-size:14px;color:var(--text-2)}
-.empty-join .link-btn{font-size:14px;font-weight:700;color:var(--accent)}
 .settings-hint{font-size:12.5px;color:var(--text-2);margin:8px 4px 0;line-height:1.45}
 /* správa skupiny (sheet) */
 .grp-code-big{
@@ -1658,3 +1656,14 @@ body.public-view .navbar{display:none}
 @media(min-width:1024px){.toast-root{top:84px}}
 /* chyba načítání kuchařky */
 .load-error .btn{margin-top:4px}
+
+/* prázdná kuchařka na Domů: krátké uvítání + dvě jasné volby pod sebou */
+.welcome{margin-top:6px}
+.welcome-title{font-family:var(--display);font-size:var(--fs-title);font-weight:700;letter-spacing:-.3px;margin:0 2px 6px}
+.welcome-lead{font-size:15px;color:var(--text-2);line-height:1.5;margin:0 2px 20px;max-width:440px}
+.welcome-options{display:flex;flex-direction:column;gap:12px}
+.welcome-options .add-recipe-card{margin-bottom:0;width:100%;text-align:left;font:inherit}
+/* vedlejší volba: světlá karta s tónovanou ikonou místo plné zelené */
+.add-recipe-card.arc-secondary{background:var(--bg-elev);border-color:var(--separator);box-shadow:var(--shadow-s)}
+.arc-secondary .arc-plus{background:var(--accent-soft);color:var(--accent);box-shadow:none}
+.arc-plus svg{width:26px;height:26px}

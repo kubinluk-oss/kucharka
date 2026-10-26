@@ -1554,12 +1554,28 @@ function renderHome() {
   if (!state.recipes.length) {
     view.innerHTML = `
       ${greetingRowHtml(SUBTITLES[daySeed() % SUBTITLES.length])}
-      <div class="empty">
-        <h3>Kuchařka je zatím prázdná</h3>
-        <p>Přidej první recept a začni sbírku.</p>
-        <a class="btn btn-primary" href="#/novy">Přidat recept</a>
-        ${canJoinGroups() ? `
-        <p class="empty-join">Máš kód skupiny? <button class="link-btn" id="home-join">Připojit se ke skupině</button></p>` : ''}
+      <div class="welcome">
+        <h2 class="welcome-title">Kuchařka je zatím prázdná</h2>
+        <p class="welcome-lead">${canJoinGroups() ? 'Začni vlastním receptem, nebo se připoj ke skupině, se kterou chceš recepty sdílet.' : 'Začni vlastním receptem.'}</p>
+        <div class="welcome-options">
+          <a class="add-recipe-card" href="#/novy">
+            <span class="arc-plus">${plusSvg}</span>
+            <span class="arc-text">
+              <span class="arc-title">Přidat první recept</span>
+              <span class="arc-sub">Ulož si, co vaříš nejradši</span>
+            </span>
+            <span class="arc-chev">${ICON.chevron}</span>
+          </a>
+          ${canJoinGroups() ? `
+          <button class="add-recipe-card arc-secondary" id="home-join">
+            <span class="arc-plus">${peopleSvg}</span>
+            <span class="arc-text">
+              <span class="arc-title">Připojit se ke skupině</span>
+              <span class="arc-sub">Máš 6místný kód? Uvidíš recepty celé skupiny</span>
+            </span>
+            <span class="arc-chev">${ICON.chevron}</span>
+          </button>` : ''}
+        </div>
       </div>`;
     view.querySelector('#home-join')?.addEventListener('click', promptJoinGroup);
     wireViewAvatarButtons(); renderProfileButtons();
