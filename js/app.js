@@ -1553,9 +1553,8 @@ function renderHome() {
 
   if (!state.recipes.length) {
     view.innerHTML = `
-      ${greetingRowHtml(SUBTITLES[daySeed() % SUBTITLES.length])}
+      ${greetingRowHtml('Kuchařka je zatím prázdná')}
       <div class="welcome">
-        <h2 class="welcome-title">Kuchařka je zatím prázdná</h2>
         <p class="welcome-lead">${canJoinGroups() ? 'Začni vlastním receptem, nebo se připoj ke skupině, se kterou chceš recepty sdílet.' : 'Začni vlastním receptem.'}</p>
         <div class="welcome-options">
           <a class="add-recipe-card" href="#/novy">
