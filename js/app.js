@@ -1536,9 +1536,12 @@ function render() {
   window.scrollTo(0, currentRoute.page === 'detail' ? 0 : (scrollPos[location.hash] || 0));
   updateHomeAvatar();   // nastav viditelnost avataru podle obnovené pozice scrollu
   updateNavbar();
-  // jemný nájezd obsahu jen při NAVIGACI (živá překreslení přes onDataChanged
-  // volají render*Page přímo, bez animace)
+  /* Jemný nájezd obsahu jen při cestě DOPŘEDU na nově postavenou stránku. Při návratu
+     zpět (swipe/tlačítko) a u stránky z paměti se ukáže hned — iPhone při swipnutí
+     předchozí stránku už sám ukázal a druhý nájezd by vypadal jako načítání.
+     Živá překreslení přes onDataChanged volají render*Page přímo, bez animace. */
   view.classList.remove('page-enter');
+  if (navWentBack || hotova) return;
   void view.offsetWidth;   // restart animace
   view.classList.add('page-enter');
   /* Třída nájezdu po doběhnutí zmizí — jinak by se postupný nájezd řádků spouštěl
@@ -1560,11 +1563,14 @@ function popOnce(el) {
 // Reaguje na hashchange (klik na odkaz) i popstate (tlačítko Zpět / gesto swipe
 // zpět). popstate se u hash-navigace pálí ještě před hashchange, takže dedup podle
 // posledního vyrenderovaného hashe zajistí jeden render na jednu navigaci.
+let navWentBack = false;   // poslední navigace byla Zpět (tlačítko / swipe)
 function onLocationChange() {
   if (location.hash === lastRoutedHash) return;
   scrollPos[lastRoutedHash] = window.scrollY;
   lastRoutedHash = location.hash;
+  navWentBack = false;
   if (history.state && typeof history.state.kd === 'number') {
+    navWentBack = history.state.kd < navDepth;
     navDepth = history.state.kd;   // zpět/vpřed na už navštívený záznam -> jeho uložená hloubka
   } else {
     navDepth += 1;                 // nová navigace vpřed (klik na odkaz) -> o úroveň hlouběji
