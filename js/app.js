@@ -1340,9 +1340,10 @@ const scrollPos = {};
 // trackpadu) v Safari: to gesto jde v historii zpět (což by mělo hloubku snížit),
 // ale hashchange by čítač naopak zvýšil, takže by pak tlačítko Zpět přeskočilo
 // mimo appku a „nevrátilo" uživatele. Se stavem v history.state čte goBack vždy
-// skutečnou hloubku aktuálního záznamu. + scrollRestoration:manual, ať Safari při
-// gestu nebojuje s naším vlastním obnovením scrollu.
-try { history.scrollRestoration = 'manual'; } catch { /* starší prohlížeče */ }
+// skutečnou hloubku aktuálního záznamu.
+// POZOR: NEnastavovat history.scrollRestoration = 'manual'. iOS pak při swipnutí
+// zpět neukáže připravený náhled předchozí stránky — chvíli je prázdná obrazovka,
+// než se stránka vykreslí (WebKit; 27. 10. 2026). Pozici si appka obnovuje i sama.
 if (!history.state || typeof history.state.kd !== 'number') {
   try { history.replaceState({ ...history.state, kd: 0 }, ''); } catch { /* jen zpevní hloubku, ne kritické */ }
 }
