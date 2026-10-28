@@ -37,14 +37,20 @@ function readOnly() { return publicMode; }
 function myName() { return DEMO ? (state.profiles[0] || 'Ty') : currentDisplayName(); }
 // Vlastnictví obsahu (recept, hodnocení): primárně podle uid autora (nové záznamy
 // ho nesou v `authorUid`), u starších záznamů fallback na shodu jména. Upravovat
-// a mazat smí jen autor — ostatní uživatelé recept jen čtou a hodnotí.
+// a mazat smí autor a správce skupiny — ostatní členové recept jen čtou a hodnotí.
 function isMine(x) {
   if (!x) return false;
   const me = currentUid();
   if (x.authorUid && me) return x.authorUid === me;
   return !!x.author && x.author === myName();
 }
-function canEditRecipe(r) { return !readOnly() && isMine(r); }
+// Správce smí cizí recept jen tehdy, když spravuje všechny moje skupiny, kde recept je
+// (úprava i smazání se propisují do všech kopií najednou).
+function canEditRecipe(r) {
+  if (readOnly() || !r) return false;
+  if (isMine(r)) return true;
+  return !DEMO && recipeGroupsOf(r).every(gid => isGroupOwner(state.groups.find(g => g.id === gid)));
+}
 
 /* ================= Stav ================= */
 const state = {
@@ -2346,7 +2352,7 @@ function openContextMenu(anchorEl, { top = [], list = [] }) {
 }
 
 // Menu správcovských akcí receptu. Hlavní akce (Do nákupního seznamu) tady NENÍ —
-// ta je viditelná u ingrediencí. Upravit/Smazat jen autor (canEditRecipe).
+// ta je viditelná u ingrediencí. Upravit/Smazat jen autor a správce skupiny (canEditRecipe).
 function openRecipeActions(anchorEl, r, mult, portions) {
   const ro = readOnly();
   const mine = canEditRecipe(r);
@@ -3004,9 +3010,9 @@ function renderEditorPage(editId) {
     view.innerHTML = NOT_FOUND_HTML;
     return;
   }
-  // pojistka i proti přímé URL #/upravit/<id> — upravit smí jen autor
+  // pojistka i proti přímé URL #/upravit/<id> — upravit smí jen autor a správce skupiny
   if (existing && !canEditRecipe(existing)) {
-    toast('Recept může upravit jen jeho autor');
+    toast('Recept může upravit jen autor nebo správce skupiny');
     location.hash = '#/recept/' + editId;
     return;
   }
@@ -3026,8 +3032,9 @@ function renderEditorPage(editId) {
   const ings = (r.ingredients && r.ingredients.length) ? r.ingredients.map(i => ({ ...i })) : [{ qty: '', unit: '—', name: '' }];
   const steps = (r.steps && r.steps.length) ? [...r.steps] : [''];
   let selectedCats = (draft?.categories) || recipeCategories(r);
-  // Do kterých kuchařek se recept uloží (výběr jen když jich mám víc).
-  const pickGroups = !DEMO && state.groups.length > 1;
+  // Do kterých kuchařek se recept uloží (výběr jen když jich mám víc). Správce, který
+  // upravuje cizí recept, ho mezi kuchařkami nepřesouvá — to je věc autora.
+  const pickGroups = !DEMO && state.groups.length > 1 && (isNew || isMine(r));
   let selectedGroups = isNew ? [state.activeGroup] : recipeGroupsOf(r);
 
   view.innerHTML = `
@@ -3315,9 +3322,10 @@ function renderEditorPage(editId) {
       name,
       categories: selectedCats,
       author,
-      // uid autora kvůli vlastnictví (upravit/smazat smí jen autor) — u staršího
-      // receptu bez uid ho doplní první úprava (upravovat ho stejně smí jen autor)
-      authorUid: isNew ? (currentUid() || '') : (r.authorUid || currentUid() || ''),
+      // uid autora kvůli vlastnictví (upravit/smazat smí autor a správce) — u staršího
+      // receptu bez uid ho doplní první úprava autora; správce ho nechá chybět
+      // (prázdné uid by autorovi úpravy zablokovalo)
+      ...((isNew || r.authorUid || isMine(r)) ? { authorUid: isNew ? (currentUid() || '') : (r.authorUid || currentUid() || '') } : {}),
       cookTime,
       portions,
       ingredients: ings.filter(i => i.name),

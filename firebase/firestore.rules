@@ -54,12 +54,14 @@ service cloud.firestore {
         // autorem jsem já; správce smí založit i cizí (převod receptů ze staré kuchařky)
         allow create: if isGroupMember(gid)
           && (request.resource.data.authorUid == request.auth.uid || groupData(gid).ownerUid == request.auth.uid);
-        // upravit celý recept smí autor; ostatní členové jen hodnocení, kategorie, jméno autora
-        // a sdílení odkazem (správa kategorií a přejmenování profilu se propisuje do všech receptů)
+        // upravit celý recept smí autor a správce skupiny; ostatní členové jen hodnocení,
+        // kategorie, jméno autora a sdílení odkazem (správa kategorií a přejmenování
+        // profilu se propisuje do všech receptů)
         allow update: if isGroupMember(gid) && (
           resource.data.get('authorUid', request.auth.uid) == request.auth.uid
+          || groupData(gid).ownerUid == request.auth.uid
           || changed().hasOnly(['reviews', 'categories', 'category', 'author', 'shared']));
-        // smazat smí autor, a správce při mazání celé skupiny
+        // smazat smí autor a správce skupiny
         allow delete: if isGroupMember(gid) && (
           resource.data.get('authorUid', request.auth.uid) == request.auth.uid
           || groupData(gid).ownerUid == request.auth.uid);
