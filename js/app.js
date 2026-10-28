@@ -3036,6 +3036,11 @@ function renderEditorPage(editId) {
   // upravuje cizí recept, ho mezi kuchařkami nepřesouvá — to je věc autora.
   const pickGroups = !DEMO && state.groups.length > 1 && (isNew || isMine(r));
   let selectedGroups = isNew ? [state.activeGroup] : recipeGroupsOf(r);
+  // Správce může recept přiřadit jinému členovi (např. recepty z testování). Jen když
+  // spravuje všechny skupiny, kde recept je, a aspoň jedna z nich je společná.
+  const authorChoices = isNew || DEMO ? [] : groupMembersOf(recipeGroupsOf(r));
+  const canAssign = authorChoices.length > 1;
+  let assigned = null;   // { uid, name } — nový autor vybraný správcem
 
   view.innerHTML = `
   <div class="page-narrow">
@@ -3065,10 +3070,16 @@ function renderEditorPage(editId) {
         <span class="field-value" id="f-grp-value"></span>
         <span class="row-chevron">${ICON.chevron}</span>
       </button>` : ''}
+      ${canAssign ? `
+      <button type="button" class="field-row" id="f-author-row">
+        <span class="field-label">Autor</span>
+        <span class="field-value" id="f-author-value">${escapeHtml(r.author || '')}</span>
+        <span class="row-chevron">${ICON.chevron}</span>
+      </button>` : `
       <div class="field-row">
         <span class="field-label">Autor</span>
         <span class="field-value">${escapeHtml(isNew ? myName() : (r.author || myName()))}</span>
-      </div>
+      </div>`}
       <div class="field-row">
         <span class="field-label">Doba přípravy</span>
         <div class="field-time">
@@ -3308,6 +3319,15 @@ function renderEditorPage(editId) {
     openGroupsPicker(selectedGroups, next => { selectedGroups = next; refreshGrpValue(); });
   });
 
+  /* — autor (jen správce) — */
+  view.querySelector('#f-author-row')?.addEventListener('click', () => {
+    const cur = assigned ? assigned.uid : (r.authorUid || authorChoices.find(m => m.name === r.author)?.uid);
+    openAuthorPicker(authorChoices, cur, m => {
+      assigned = m;
+      view.querySelector('#f-author-value').textContent = m.name;
+    });
+  });
+
   /* — uložení — */
   view.querySelector('#f-save').addEventListener('click', async () => {
     const name = view.querySelector('#f-name').value.trim();
@@ -3326,6 +3346,7 @@ function renderEditorPage(editId) {
       // receptu bez uid ho doplní první úprava autora; správce ho nechá chybět
       // (prázdné uid by autorovi úpravy zablokovalo)
       ...((isNew || r.authorUid || isMine(r)) ? { authorUid: isNew ? (currentUid() || '') : (r.authorUid || currentUid() || '') } : {}),
+      ...(assigned ? { author: assigned.name, authorUid: assigned.uid } : {}),
       cookTime,
       portions,
       ingredients: ings.filter(i => i.name),
@@ -3351,6 +3372,35 @@ function renderEditorPage(editId) {
 function groupLabel(gid) {
   const g = state.groups.find(x => x.id === gid);
   return g?.personal ? 'Moje kuchařka' : (g?.name || 'Kuchařka');
+}
+
+// Členové daných skupin, kterým může správce recept přiřadit. Prázdné, když některou
+// ze skupin nespravuju; osobní kuchařka (jen já) nic nepřidává.
+function groupMembersOf(gids) {
+  const groups = gids.map(id => state.groups.find(g => g.id === id));
+  if (groups.some(g => !isGroupOwner(g))) return [];
+  const byUid = new Map();
+  groups.forEach(g => (g.members || []).forEach(u => {
+    if (!byUid.has(u)) byUid.set(u, { uid: u, name: g.memberNames?.[u] || (u === currentUid() ? myName() : 'Člen') });
+  }));
+  return [...byUid.values()].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+}
+
+// Výběr nového autora receptu (správce skupiny).
+function openAuthorPicker(members, currentUidSel, onPick) {
+  const sheet = openSheet({ title: 'Autor receptu', bodyHtml: `
+    <p class="muted share-note">Recept bude patřit vybranému členovi — bude ho moct upravovat a smazat.</p>
+    <div class="settings-card">
+      ${members.map(m => `
+        <button type="button" class="settings-row" data-uid="${escapeHtml(m.uid)}">
+          <span class="row-label">${escapeHtml(m.name)}${m.uid === currentUid() ? ' <span class="muted">(ty)</span>' : ''}</span>
+          ${m.uid === currentUidSel ? checkAccentSvg : ''}
+        </button>`).join('')}
+    </div>` });
+  sheet.body.querySelectorAll('[data-uid]').forEach(b => b.addEventListener('click', () => {
+    onPick(members.find(m => m.uid === b.dataset.uid));
+    sheet.close();
+  }));
 }
 
 // Výběr kuchařek, do kterých recept patří — víc najednou, aspoň jedna.
