@@ -1,6 +1,6 @@
 // Service worker: cachuje jen soubory aplikace (shell). Data žijí ve Firebase,
 // takže požadavky mimo tento web necháváme být — aplikace potřebuje připojení.
-const CACHE = 'kucharka-v127';
+const CACHE = 'kucharka-v128';
 /* Fotky receptů a profilovek. Záměrně VLASTNÍ cache s vlastní verzí: přežije
    aktualizace appky, takže se po každé změně kódu nestahují znovu. Firebase u nich
    posílá `cache-control: private, max-age=0`, takže by je prohlížeč sám nikdy
@@ -32,7 +32,9 @@ self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE && k !== IMG_CACHE).map(k => caches.delete(k))))
+        // jen starší verze TÉHLE appky — na stejné doméně běží i beta (kucharka-beta-vN)
+        // a její cache musí zůstat
+        keys.filter(k => k.startsWith(CACHE.replace(/\d+$/, '')) && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

@@ -2891,7 +2891,9 @@ function shoppingListPlainText() {
 function shareUrl(r) {
   const gid = r._gid || state.activeGroup;
   const g = gid ? '?g=' + encodeURIComponent(gid) : '';
-  return location.origin + location.pathname + g + '#/recept/' + encodeURIComponent(r.id);
+  // z bety (kucharka-beta) odkaz vede do ostré appky — tu mají ostatní
+  const base = location.pathname.replace(/\/kucharka-beta\//, '/kucharka/');
+  return location.origin + base + g + '#/recept/' + encodeURIComponent(r.id);
 }
 // Karta sdílení: nahoře kopie do jiné mé kuchařky (skupiny), dole veřejný odkaz
 // pro kohokoli i bez účtu. Horní část se ukáže, jen když nějakou další kuchařku mám.
