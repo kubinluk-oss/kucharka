@@ -106,10 +106,24 @@ const STORE_KEYWORDS = {
   ],
 };
 
+/* Přednostní pravidla — kontrolují se DŘÍV než slovník výše, protože ten bere první
+   shodu podle pořadí kategorií. Bez nich skončí „sladká paprika" u zeleniny (kvůli
+   „paprika"), „mletý kmín" u masa (kvůli „mletý") a „kokosové mléko" u mléčných.
+   Platí, když název obsahuje VŠECHNY uvedené kmeny. */
+const STORE_PRIORITY = [
+  [['paprik', 'mlet'], 'trvanlive'], [['paprik', 'sladk'], 'trvanlive'], [['paprik', 'udo'], 'trvanlive'],
+  [['protlak'], 'trvanlive'], [['vyvar'], 'trvanlive'], [['bujon'], 'trvanlive'],
+  [['kmin'], 'trvanlive'], [['koreni'], 'trvanlive'], [['susen'], 'trvanlive'],
+  [['vlock'], 'trvanlive'], [['kari'], 'trvanlive'], [['kokosov', 'mlek'], 'trvanlive'],
+  [['rajc', 'loupan'], 'trvanlive'], [['rajc', 'konzerv'], 'trvanlive'], [['rajc', 'plechov'], 'trvanlive'],
+];
+
 // Zařadí název položky do kategorie v obchodě. Nezná-li ji, vrátí 'ostatni'.
 export function classifyIngredient(name) {
   const n = ' ' + norm(name) + ' ';
   if (!n.trim()) return 'ostatni';
+  const pri = STORE_PRIORITY.find(([stems]) => stems.every(k => n.includes(k)));
+  if (pri) return pri[1];
   for (const cat of STORE_CATEGORIES) {
     if (cat.key === 'ostatni') continue;
     const kws = STORE_KEYWORDS[cat.key];

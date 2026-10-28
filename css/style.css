@@ -1633,6 +1633,8 @@ body.public-view .navbar{display:none}
   mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 .search-box:focus-within::before{background:var(--accent)}
+/* vlastní tlačítko vymazání (.sb-clear) stačí — systémový křížek prohlížeče by byl druhý */
+.search-box input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
 
 /* — výběr (select): vlastní šipka z masky místo znaku ⌄ — */
 .form-select-wrap::after{

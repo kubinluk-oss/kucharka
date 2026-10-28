@@ -25,6 +25,10 @@ const FEEDBACK_EMAIL = 'kubin.luk@gmail.com';
 // Mutable: přepne se do něj i host bez účtu (viz guestDemoFallback).
 const URL_DEMO = new URLSearchParams(location.search).has('demo');
 let DEMO = URL_DEMO;
+/* Video režim: ukázková data pro natáčení instruktážního videa (skript je předá
+   v window.KUCHARKA_DEMO). Jen v demu — skupiny, připojení kódem a společný nákup
+   se tu odehrají v paměti, bez cloudu. Bez těch dat se appka chová jako dřív. */
+const VIDEO = URL_DEMO ? (window.KUCHARKA_DEMO || null) : null;
 // Veřejný náhled sdíleného receptu (bez přihlášení) — jen ten jeden recept, bez nav chromu.
 let publicMode = false;
 // Host („Prohlížet bez přihlášení"): bez účtu nemá kuchařku, dostane ukázková data.
@@ -85,6 +89,17 @@ state.shoppingSort = localStorage.getItem('kucharka-shopping-sort') || 'store';
 /* ================= Data — Firebase ================= */
 function loadDemoData() {
   loadShoppingLocal();
+  if (VIDEO) {
+    Object.assign(state, {
+      categories: VIDEO.categories, catStyles: VIDEO.catStyles, profiles: VIDEO.profiles,
+      recipes: VIDEO.recipes, groups: VIDEO.groups || [], activeGroup: 'p_',
+      sharedLists: VIDEO.sharedLists || [], loaded: true,
+    });
+    if (VIDEO.shopping) { state.myShopping = VIDEO.shopping; state.shopping = VIDEO.shopping; }
+    renderProfileButtons();
+    onDataChanged();
+    return;
+  }
   state.categories = [...DEFAULT_CATS, 'Mořské plody'];
   state.catStyles = {
     'Polévky': { color: 3, emoji: '🍲' },
@@ -665,6 +680,15 @@ function subscribeShopping() {
   }, err => console.error('shared lists sync:', err));
 }
 
+// Natáčení: „druhý člověk" přidá položku do společného seznamu (skript to zavolá),
+// ať je ve videu vidět, že se změny ukážou hned.
+if (VIDEO) window.__videoOtherAdds = text => {
+  const l = state.sharedLists.find(x => x.id === state.shopList);
+  if (!l) return;
+  l.items = [...l.items, { id: uid(), text, cat: classifyIngredient(text), done: false }];
+  showShoppingItems(l.items);
+};
+
 // Přepne zobrazený seznam (osobní / společný).
 function selectShopList(id) {
   state.shopList = id;
@@ -681,6 +705,11 @@ function selectShopList(id) {
    z cloudu vyčteme, co jsem změnil JÁ, a v transakci to přiložíme na aktuální stav. */
 const sharedBase = {};   // id seznamu -> položky podle posledního snímku z cloudu
 async function saveSharedList(lid, local) {
+  if (VIDEO) {   // natáčení: jen v paměti
+    const l = state.sharedLists.find(x => x.id === lid);
+    if (l) l.items = local;
+    return;
+  }
   const base = sharedBase[lid] || [];
   const baseById = new Map(base.map(i => [i.id, JSON.stringify(i)]));
   const localIds = new Set(local.map(i => i.id));
@@ -723,6 +752,13 @@ async function createSharedList(people) {
   const me = currentUid();
   const names = { [me]: myName() };
   people.forEach(p => { names[p.uid] = p.name; });
+  if (VIDEO) {   // natáčení: seznam jen v paměti
+    const id = 'video-list';
+    state.sharedLists = [...state.sharedLists, { id, ownerUid: me, members: [me, ...people.map(p => p.uid)], memberNames: names, items: state.myShopping, createdAt: Date.now() }];
+    state.myShopping = [];
+    selectShopList(id);
+    return;
+  }
   const ref = doc(collection(db, 'sharedLists'));
   await setDoc(ref, {
     ownerUid: me, members: [me, ...people.map(p => p.uid)], memberNames: names,
@@ -2341,7 +2377,7 @@ function renderShoppingPage() {
   <div class="page-narrow">
     <div class="page-topbar">
       <span class="spacer"></span>
-      ${shoppingIsLocal() ? '' : `<button class="circle-btn" id="shop-people" aria-label="Sdílet seznam">${peopleSvg}</button>`}
+      ${shoppingIsLocal() && !VIDEO ? '' : `<button class="circle-btn" id="shop-people" aria-label="Sdílet seznam">${peopleSvg}</button>`}
       <button class="circle-btn" id="shop-filter" aria-label="Řazení a možnosti" hidden>${filterSvg}</button>
     </div>
     <div class="page-head">
@@ -2409,7 +2445,7 @@ function sharedListLabel(l) {
 function renderShopLists() {
   const box = view.querySelector('#shop-lists');
   if (!box) return;
-  const lists = shoppingIsLocal() ? [] : state.sharedLists;
+  const lists = shoppingIsLocal() && !VIDEO ? [] : state.sharedLists;
   box.hidden = !lists.length;
   const seen = seenShopLists();
   box.innerHTML = lists.length ? `
@@ -3789,7 +3825,7 @@ function renderSettingsPage() {
           ${avatarInnerHtml()}
         </button>
         <div class="page-title">${escapeHtml(me || 'Host')}</div>
-        <div class="page-sub">${loggedIn ? 'tvůj profil a nastavení' : 'ukázkový režim'}</div>
+        <div class="page-sub">${loggedIn || VIDEO ? 'tvůj profil a nastavení' : 'ukázkový režim'}</div>
       </div>
     </div>
 
@@ -3838,7 +3874,7 @@ function renderSettingsPage() {
       </div>
     </div>` : ''}
 
-    ${loggedIn ? `
+    ${loggedIn || VIDEO ? `
     <div class="settings-group">
       <h3>Kuchařky</h3>
       <div class="settings-card">
@@ -3878,7 +3914,7 @@ function renderSettingsPage() {
       </div>
     </div>
 
-    <p class="detail-footnote" id="set-foot">${guestDemoFallback || DEMO ? 'Kuchařka · ukázková data' : 'Kuchařka'}</p>
+    <p class="detail-footnote" id="set-foot">${(guestDemoFallback || DEMO) && !VIDEO ? 'Kuchařka · ukázková data' : 'Kuchařka'}</p>
   </div>`;
 
   view.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
@@ -3967,11 +4003,19 @@ function openChangePassword() {
 // Změna jména — promítne se do všech receptů a hodnocení (renameProfileEverywhere).
 // V demu není přihlášený uživatel, takže se přeskočí changeDisplayName (jen lokální).
 // Ke skupinám se dá připojit jen se skutečným účtem (ne v demu / jako host).
-const canJoinGroups = () => !DEMO && !guestDemoFallback && !!currentUid();
+const canJoinGroups = () => !!VIDEO || (!DEMO && !guestDemoFallback && !!currentUid());
 
 async function promptJoinGroup() {
   const code = await promptDialog('Připojit se ke skupině', 'Zadej 6místný kód, který ti poslal někdo ze skupiny.', { placeholder: 'např. K7P4QX', okLabel: 'Připojit' });
   if (!code) return;
+  if (VIDEO) {   // natáčení: skupina z ukázkových dat, bez cloudu
+    const join = VIDEO.join;
+    state.groups = [...state.groups, join.group];
+    state.recipes = [...state.recipes, ...join.recipes];
+    onDataChanged();
+    toast('Jsi ve skupině');
+    return;
+  }
   showLoader('Připojuju…');
   try {
     const gid = await joinGroup(code);
